@@ -1,0 +1,124 @@
+<html>
+
+<head>
+    <script>window.$ = window.jQuery = require('jquery');</script>
+
+    <link rel="stylesheet" href="../../../resource/css/popup/layout.css">
+
+</head>
+
+<body>
+    <div class="window-layout">
+        <div class="plc-layout">
+            <table>
+                <colgroup>
+                    <col width="25%">
+                    <col width="5px">
+                    <col width="50%">
+                    <col />
+                </colgroup>
+                <tbody>
+                    <tr>
+                        <td><span>PLC 이름 : </span></td>
+                        <td></td>
+                        <td><input type="text" id="plcName"></td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td><span>CPU 선택 : </span></td>
+                        <td></td>
+                        <td>
+                            <select id="cpu">
+                                <option value="LIT-V1">LIT-V1</option>
+                            </select>
+                        </td>
+                        <td></td>
+                    </tr>
+                        <td><span>제품 선택 : </span></td>
+                        <td></td>
+                        <td>
+                            <select id="plcMod"></select>
+                        </td>
+                        <td><button id="btnProductView">제품 보기</button></td>
+                    </tr>
+                    <tr>
+                        <td valign="top"><div class="last"><span>설명 : </span></div></td>
+                        <td></td>
+                        <td colspan="2">
+                            <textarea id="discription"></textarea>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="button-layout">
+            <button id="btnConfirm">확인</button>
+            <button id="btnCancel">취소</button>
+        </div>
+
+    </div>
+</body>
+
+<script type="text/javascript">
+
+    const rootPath = __dirname + '/../../../..';
+    const resourcePath = rootPath + '/src/resource';
+    const definePath = resourcePath + '/js/define';
+    const utilPath = resourcePath + '/js/util';
+
+    const uconsole = require(utilPath + '/utilConsole');
+    const req = require(definePath + '/req')
+    const product = require(definePath + '/product');
+
+    const { dialog } = require('electron').remote;
+    const { ipcRenderer } = require('electron');
+
+    // PLC 이름 받기
+    ipcRenderer.on(req.getPlcName, (event, plcName) => {
+        if (plcName.trim().length > 0) {
+            $('#plcName').val(plcName);
+        }
+    });
+
+    // 확인 
+    $('#btnConfirm').on('click', function () {
+        ipcRenderer.send(req.setPlcName, $('#plcName').val(), $('#plcMod').val());
+        window.close();
+    });
+
+    // 취소
+    $('#btnCancel').on('click', function () {
+        window.close();
+    });
+
+    // CPU 정보 초기화
+    
+
+    // 제품 이름 초기화
+    var plcMods = product.PLC_MOD_NAMES();
+    for (var j = 0; j < plcMods.length; j++) {
+        $('#plcMod').append('<option value="' + plcMods[j] + '">' + plcMods[j] + '</option>');
+    }
+
+    // ESC 키 - 창 닫기
+    window.onkeydown = function (event) {
+        if (event.key == 'Escape') {
+            window.close();
+        }
+    }
+
+    // 제품 정보 보기
+    $('#btnProductView').on('click', function () {
+        // ipcRenderer.send(req.productViewToMain, "");
+        ipcRenderer.send(req.alert, "개발 진행중 입니다.....");
+    });
+
+    // html 내부 블럭 선택 방지
+    $('body').bind("selectstart", function (e) {
+        return false;
+    });
+
+</script>
+
+</html>

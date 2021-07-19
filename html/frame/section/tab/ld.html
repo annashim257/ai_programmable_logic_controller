@@ -1,0 +1,3221 @@
+<html>
+
+<head>
+    <!-- jquery 로딩 -->
+    <script>window.$ = window.jQuery = require('jquery');</script>
+    <link rel="stylesheet" href="../../../../resource/css/editor.css">
+    <link rel="stylesheet" href="../../../../resource/css/ld.css">
+</head>
+
+<style>
+    body {
+        margin: 2.5px;
+        background-color: #eeeeee;
+    }
+</style>
+
+<body onkeyup="moveToNextCell(event)" onkeypress="ldEnterPress(event)">
+    <div class="program">
+        <table id="ld-table"></table>
+        <div class="ld-symbols"></div>
+        <div class="ld-vertical"></div>
+
+    </div>
+    <!-- <div class="symbol-cursor"></div> -->
+
+    <!-- 문자열 검색 / 문자열 바꾸기 -->
+    <div class="searchBox">
+
+        <div class="searchBoxTitle">
+            <label>검색</label><a id="searchBoxClose" href="#"><img
+                    src="../../../../resource/image/close_over.png"></img></a>
+        </div>
+
+        <div class="searchBoxValue">
+            <div><label>검색 내용 :</label><input type="text" id="searchValue"></div>
+            <div><label>바꿀 내용 :</label><input type="text" id="changehValue"></div>
+        </div>
+
+        <div class="searchBoxButton">
+            <button id="searchButton">검색</button>
+            <button id="changeButton">바꾸기</button>
+            <button id="changeAllButton">모두 바꾸기</button>
+        </div>
+
+    </div>
+</body>
+
+<script type="text/javascript">
+
+    const path = require('path');
+    const { ipcRenderer, remote } = require('electron');
+    const { Menu } = remote;
+    const fs = require('fs');
+
+    const rootPath = path.join(__dirname, '/../../../../..');
+    const resourcePath = rootPath + '/src/resource';
+    const rendererPath = resourcePath + '/js/renderer';
+    const definePath = resourcePath + '/js/define';
+    const utilPath = resourcePath + '/js/util';
+    const ldPath = resourcePath + '/image/index/editor/ld'
+
+    const { alertWindow } = require(utilPath + '/utilAlert')
+
+    const req = require(definePath + '/req');
+    const action = require(definePath + '/action');
+    const uconsole = require(utilPath + '/utilConsole');
+    const config = require(definePath + '/config');
+    const xmlManager = require(rendererPath + '/xmlManager');
+
+    // Default table status
+    const ldTable = document.getElementById('ld-table')
+
+    var focusTarget;
+    var eventStatus;
+
+    var projPath;
+    var projName;
+    var progLabel;
+    var plcName;
+    var progName;
+    var className;
+    var parentProgType;
+    var ldRowNum
+    var ldColNum
+    var ldContactNum = ldColNum - 2
+
+    var isLdVertical
+    var isSelected
+    var ldTableX
+    var ldTableY
+    var ldCurrentX
+    var ldCurrentY
+    var lastLine
+    var ldSymbolType
+    var hasSymbol
+
+    var tmpSymbol
+
+    // 현재 포인트 상태
+    var currentPoint = action.esc
+
+    // LD table cell position
+    const getCurrentPos = () => {
+        const checkTD = $('.selected').prop('tagName') !== 'TD'
+        const className = $('.selected').attr('class')
+
+        isLdVertical = $('.selected').attr('type') === 'verticalLink'
+        isSelected = $('.program').find('.selected').length !== 0 || $('.program').find('.row-selected').length !== 0
+
+        if (isLdVertical) {
+            ldTableX = className.split('-')[2]
+            ldTableY = className.split('-')[3].split(' ')[0]
+            ldSymbolType = 'verticalLink'
+        } else {
+            ldTableX = checkTD ? $('.row-selected').index() : $('.selected').parent().index()
+            ldTableY = checkTD ? $('.row-selected').children().index() : $('.selected').index()
+            ldSymbolType = $(`.ld-${ldTableX}-${ldTableY}`).attr('type') === undefined ? '' : $(`.ld-${ldTableX}-${ldTableY}`).attr('type')
+        }
+
+        // 아이템 삽입 위한 현재 선택된 셀의 absolute position 
+        if ($('.program').find('.selected').length !== 0) {
+            ldCurrentX = $('.selected').offset().left
+            ldCurrentY = $('.selected').offset().top
+        }
+
+        hasSymbol = $(`tr:eq(${ldTableX}) td:eq(${ldTableY})`).attr('hasSymbol')
+    }
+
+    var ldSymbolCategory = () => {
+        if ($(`tr:eq(${ldTableX})`).children().hasClass('label')) {
+            return selectedText(0)[0]
+        } else if ($('.selected').hasClass('comments')) {
+            return 'comments'
+        } else if ($('.selected').parent('[class$="vertical"]').length !== 0) {
+            return $('.selected').attr('type')
+        } else if ($('.selected').hasClass('func')) {
+            return 'func'
+        } else if ($('.selected').hasClass('funcBlock')) {
+            return 'funcBlock'
+        } else {
+            return $(`.ld-${ldTableX}-${ldTableY}`).attr('type')
+        }
+    }
+
+    const selectedText = idx => {
+        switch (idx) {
+            case 0:
+                var childText = idx => {
+                    return $('.row-selected').children(`td:eq(${idx})`).children().text()
+                }
+                var content = childText(1)
+                var type = childText(0) === '라벨' ? 'label' : 'description'
+                return [type, content]
+            default:
+                return $('.selected').children().text()
+        }
+    }
+
+    // Check the line if it has description/label or not
+    const hasDescription = () => {
+
+        var target = ldTableY === 0 ? $('.row-selected').children('td:eq(0)') : $('.selected').siblings().first()
+
+        if (target.hasClass('label')) {
+            return true
+        } else {
+            return false
+        }
+    }
+
+    // Fill out the cells by link
+    const fillOutByLink = (idx, action) => {
+
+        var targetCells = {
+            projPath: projPath,
+            progLabel: progLabel,
+            posX: ldTableX,
+            posY: []
+        }
+
+        for (var i = idx - 1; i > 0; i--) {
+            deselectCell()
+
+            var prevCell = $(`tr:eq(${ldTableX}) td:eq(${i})`)
+
+            ldTableY = i
+
+            if (prevCell.attr('hasSymbol') == 0) {
+                prevCell.addClass('selected')
+                targetCells.posY.push(i)
+                insertLdSymbol('link')
+            } else {
+                break
+            }
+        }
+
+        if (action === 'connectByLink') {
+
+            for (var i = idx; i < ldContactNum + 1; i++) {
+
+                deselectCell()
+
+                var targetCell = $(`tr:eq(${ldTableX}) td:eq(${i})`)
+                targetCell.addClass('selected')
+
+                ldTableY = i
+
+                if (i < ldContactNum && targetCell.attr('hasSymbol') == 0) {
+                    insertLdSymbol('link')
+                    targetCells.posY.push(i)
+                } else {
+                    break
+                }
+            }
+        }
+
+        writeProgByAddLinks(targetCells)
+
+        deselectCell()
+        $(`tr:eq(${ldTableX}) td:eq(${idx})`).addClass('selected')
+
+        chkError()
+    }
+
+
+    //
+    const canPutSymbol = type => {
+
+        // console.log(type)
+
+        const typeCategory = () => {
+            if (type.toLowerCase().includes('contact')) {
+                return 'contact'
+            } else if (type.toLowerCase().includes('coil')) {
+                return 'coil'
+            } else {
+                return type
+            }
+        }
+
+        // console.log(typeCategory())
+
+        if (!$(`tr:eq(${ldTableX}) td:eq(${ldTableY})`).hasClass('label')) {
+            switch (typeCategory()) {
+                case 'link':
+                case 'contact':
+                case 'verticalLink':
+
+                    if (ldTableY !== 0 && ldTableY < ldContactNum && !$('.selected').hasClass('func')) {
+                        if (ldSymbolCategory() === 'verticalLink') {
+                            return false
+                        } else {
+                            return true
+                        }
+                    } else {
+                        return false
+                    }
+
+                case 'funcVar':
+                    return true
+
+                case 'coil':
+
+                    if (ldTableY === ldContactNum) return true
+
+                case 'func':
+                case 'funcBlock':
+
+                    // Check the space for function
+                    for (var i = ldTableX; i < ldTableX + 3; i++) {
+                        for (var j = ldTableY; j < ldTableY + 2; j++) {
+                            if ($(`tr:eq(${i}) td:eq(${j})`).attr('hasSymbol') != 0 || $(`tr:eq(${i}) td:eq(0)`).attr('class') === 'label') {
+                                return false
+                            }
+                        }
+                    }
+
+                    if (ldTableY > 1 && ldTableY < ldContactNum - 1) {
+                        return true
+                    } else {
+                        return false
+                    }
+            }
+        } else {
+            alertWindow('해당 라인에 설명문이 이미 존재합니다')
+        }
+
+    }
+
+    // Insert the symbol which has the same type with the cursor icon
+    const getSymbolFromCursor = () => {
+
+        if (!$('.selected').hasClass('func') && currentPoint !== action.esc) {
+            switch (currentPoint) {
+
+                case action.func:
+                case action.funcBlock:
+
+                    // Open the function popup in the empty cell
+                    if (canPutSymbol(currentPoint)) {
+                        ipcRenderer.send(req.funcSelectWindowToMain)
+
+                        // Other symbol is already exist in the selected cell
+                    } else {
+                        if (ldTableY > 1 && ldTableY < ldContactNum - 1) {
+                            alertWindow("펑션을 삽입할 위치에 심볼 또는 설명문/라벨 이 이미 존재합니다")
+                        } else {
+                            alertWindow("해당 위치에서는 펑션을 삽입할 수 없습니다")
+                        }
+                    }
+                    break
+
+                case 'reverseContact':
+                case 'link':
+                case 'verticalLink':
+
+                    if (canPutSymbol(currentPoint)) {
+                        insertLdSymbol(currentPoint)
+                        writeProgByAddEntity(currentPoint, '', '', '', '', '')
+
+                        // chkError()
+
+                        if (currentPoint === 'verticalLink') {
+                            $('.selected').removeClass('selected')
+                            $(`.ld-v-${ldTableX}-${ldTableY}`).addClass('selected')
+                        }
+
+                    } else {
+                        var korName
+
+                        switch (currentPoint) {
+                            case 'reverseContact':
+                                korName = '반전 접점'
+                                break
+                            case 'link':
+                                korName = '가로 연결선'
+                                break
+                            case 'verticalLink':
+                                korName = '세로 연결선'
+                                break
+                        }
+
+                        alertWindow(`해당 위치에서는 ${korName}을 삽입할 수 없습니다`)
+                    }
+
+                    break
+
+                case 'connectByLink':
+
+                    var currentCol = $('.selected').index()
+
+                    // 가로선 채우기 가능 조건 - the index of the selected Cell has to be between 1 and (contact number-1)
+                    if (currentCol < ldContactNum && currentCol > 0) {
+                        fillOutByLink(currentCol, 'connectByLink')
+                    } else {
+                        alertWindow('가로선으로 채울 수 없는 영역입니다')
+                    }
+
+                    break
+
+                default:
+
+                    if (canPutSymbol(currentPoint)) {
+                        getVarSelectPopup()
+                    } else {
+                        var korName
+
+                        if (currentPoint.toLowerCase().includes('coil')) {
+                            korName = '코일'
+                        } else {
+                            korName = '접점'
+                        }
+
+                        if (currentPoint !== 'connectByLink') alertWindow(`해당 위치에서는 ${korName}을 삽입할 수 없습니다`)
+                    }
+
+                    break
+            }
+        } else {
+            if (currentPoint !== action.esc) alertWindow('심볼/펑션 은 펑션을 덮어쓸 수 없습니다')
+        }
+    }
+
+    // 셀의 상태에 따른 팝업창 
+    const getVarSelectPopup = () => {
+
+        // 빈 셀
+        if (hasSymbol == 0) {
+            ipcRenderer.send(req.variableSelectWindowToMain, {
+                projPath: projPath,
+                projName: projName,
+                plcName: plcName,
+                progName: progName,
+                className: className,       // 에디터 클래스 이름
+                varType: 'localVar',        // 변수 종류 ( 로컬 변수 (localVar) or 글로벌 변수(globalVar) )
+                name: '',                    // 변수 이름
+                // eventStatus: eventStatus
+            });
+
+            // 코일/접점을 이미 가지고 있는 셀인 경우
+        } else {
+            ipcRenderer.send(req.variableSelectWindowToMain, {
+                projPath: projPath,
+                projName: projName,
+                plcName: plcName,
+                progName: progName,
+                className: className,
+                varType: '',
+                name: selectedText(),
+                eventStatus: eventStatus,
+                currentDataType: ''
+            });
+        }
+    }
+
+    // 셀 선택 박스 비활성화
+    const deselectCell = () => {
+        $('td').removeClass('selected')
+        $('tr').removeClass('row-selected')
+        $('div').removeClass('selected')
+    }
+
+    // 셀 클릭 시 선택 박스 활성화
+    const clickLdElem = function (td) {
+
+        // Select a cell
+        $(td).on('contextmenu click', function () {
+            deselectCell()
+            $(this).addClass('selected')
+
+            getCurrentPos()
+
+            // Select the line if there is Description in this line instead of cell
+            if (ldSymbolCategory() === 'label' || ldSymbolCategory() === 'description') {
+                deselectCell()
+                $(this).parent().addClass('row-selected')
+            }
+        })
+
+        // 
+        $(td).on('click', function () { getSymbolFromCursor() })
+
+        // 프로그램 화면에 심볼상태에서 클릭한 경우 해당 팝업창 열기 / 설명문 또는 레이블 창 열기
+        $(td).on('dblclick', function () { openLdPopup("enter") })
+
+        // Select a row
+        $('#ld-table td:first-child').on('click contextmenu', function () {
+            deselectCell()
+            $(this).parent().addClass('row-selected')
+        })
+    }
+
+    // Number each line 
+    const setLineNum = i => {
+        for (i = 0; i < ldRowNum; i++) {
+            var firstCol = $(`tr:eq(${i}) td:first-child`)
+
+            // Skip setting the line number if there is description/label
+            if (firstCol.hasClass('label')) {
+                continue
+
+                // Number the other lines
+            } else {
+                firstCol.children().text(`Line ${i}`)
+            }
+        }
+    }
+
+    // create the row for LD
+    const createLdRow = (i) => {
+        var tr = ldTable.insertRow(i)
+
+        for (j = 0; j < ldColNum; j++) {
+            var td = tr.insertCell(j)
+            td.innerHTML = `<div class="ld-td"></div>`
+            clickLdElem(td)
+        }
+    }
+
+    // Create the default LD
+    const createLdTable = () => {
+        for (i = 0; i < ldRowNum; i++) {
+            createLdRow(i)
+            $(`tr:eq(${i}) td:not(:last):not(:first)`).attr('hasSymbol', 0)
+        }
+        setLineNum()
+    }
+
+    // LD symbol
+    const ldSymbol = (type, name) => {
+        getCurrentPos()
+
+        if (hasSymbol == 1) {
+            $('.selected').attr('hasSymbol', '2')
+        } else {
+            $('.selected').attr('hasSymbol', '1')
+        }
+
+        var ldSymbolClass = type === 'verticalLink' ? `ld-v-${ldTableX}-${ldTableY}` : `ld-${ldTableX}-${ldTableY}`
+        ldCurrentX = type === 'verticalLink' ? ldCurrentX + 70 : ldCurrentX
+        ldCurrentY = type === 'verticalLink' ? ldCurrentY + 30 : ldCurrentY
+
+        if (type == 'funcVar') {
+            return `<div class='${ldSymbolClass}' type='${type}' style='position: absolute; top:${ldCurrentY}; left:${ldCurrentX};'>
+                        <div class="funcVar">${name}</div>
+                    </div>`
+        } else {
+            return `<div class='${ldSymbolClass}' type='${type}' style='position: absolute; top:${ldCurrentY}; left:${ldCurrentX};'>
+                        <img src="${ldPath}/${type}.png">
+                    </div>`
+        }
+
+
+    }
+
+    // Insert the function
+    const insertLdFunc = (size, row, col, posX, posY, type) => {
+
+        var currentCell = $(`tr:eq(${row}) td:eq(${col})`)
+
+        if (typeof type === 'object') {
+            $('.ld-symbols').append(`<div class='ld-${row}-${col}' type='func-name' style='position: absolute; top:${posY + 5}; left:${posX};'>
+                                            <div class='funcVarName'>${type.name}</div>
+                                            <div class='funcName'>${type.funcName}</div>
+                                        </div>`)
+        } else {
+            $('.ld-symbols').append(`<div class='ld-${row}-${col}' type='${type}' style='position: absolute; top:${posY}; left:${posX};'>
+                                        <img src="${ldPath}/${type}.png">
+                                    </div>`)
+        }
+
+        currentCell.attr('hasSymbol', 1)
+    }
+
+    // Insert/Replace the symbol 
+    const insertLdSymbol = (type, name) => {
+
+        var ldSymbolClass = type === 'verticalLink' ? $(`.ld-v-${ldTableX}-${ldTableY}`) : $(`.ld-${ldTableX}-${ldTableY}`)
+
+        if (type === 'verticalLink') {
+            if (ldSymbolClass.length === 0 && canPutSymbol(type)) {
+                if (type === 'verticalLink') {
+                    // 수직선 삽입 조건 - 선택 셀 아래 셀에 펑션 입력 파라미터 있으면 수직선 삽입 불가
+                    if ($(`.ld-${ldTableX + 1}-${ldTableY}`).attr('type') === 'func-top-input') {
+                        alertWindow('심볼 또는 설명문/라벨 이 이미 존재합니다')
+                    } else {
+                        $('.ld-vertical').append(ldSymbol(type))
+                    }
+
+                    // Select a vertical line
+                    $('.ld-vertical > div').on('click', function () {
+                        deselectCell()
+                        $(this).addClass('selected')
+                        getCurrentPos()
+                    })
+                }
+            }
+        } else {
+            if (ldSymbolClass.length === 0 && canPutSymbol(type)) {
+
+                if (type === 'funcVar') {
+                    $('.ld-symbols').append(ldSymbol(type, name))
+                } else {
+                    $('.ld-symbols').append(ldSymbol(type))
+                }
+
+                if (type.toLowerCase().includes('coil')) {
+                    $('.selected').next().children().text('comments')
+                }
+            } else {
+                var isFunc = $('.selected').hasClass('func')
+
+                // 선택된 셀에 펑션이 있을 경우 심볼 교체 삽입 불가
+                if (!isFunc) {
+
+                    // 심볼 교체 삽입
+                    if (type === 'funcVar') {
+                        ldSymbolClass.children().text(name)
+                    } else if (type !== 'esc') {
+                        ldSymbolClass.attr('type', type)
+                        ldSymbolClass.children().eq(0).replaceWith(`<img src="${ldPath}/${type}.png">`)
+                    }
+
+                    // Delete the original symbol's name
+                    if (type === 'link' || type === 'reverseContact') {
+                        $('.selected').children().text('')
+                        $('.selected').removeAttr('title')
+                    }
+                }
+            }
+        }
+
+        if (lastLine < ldTableX) {
+            lastLine = ldTableX
+        }
+
+        setTimeout(function () { chkError() }, 10)
+    }
+
+    // 설명문/라벨 삽입
+    const setLabelLine = (opt, action) => {
+        var targetLine = $('tr').hasClass('row-selected') ? $('.row-selected') : $('.selected').parent()
+        var setTargetType = targetLine.children('td:eq(0)').children()
+
+        switch (opt.type) {
+            case config.TYPE_DESCRITPION:
+                setTargetType.text('설명문')
+                break;
+            case config.TYPE_LABEL:
+                setTargetType.text('라벨')
+                break;
+        }
+
+        targetLine.children('td:eq(1)').children().text(opt.content)
+        targetLine.children().addClass('label')
+
+        if (action !== 'load') {
+            writeProgByAddRungLabel(opt.type, opt.content)
+        }
+
+        if ($('.selected').prop('tagName') === 'TD') {
+            deselectCell()
+            targetLine.addClass('row-selected')
+        }
+    }
+
+    // 출력 설명문 삽입
+    const setComments = (content, action) => {
+        $('.selected').children().text(content)
+        $('.selected').addClass('comments')
+
+        if (action !== 'load') {
+            writeProgByAddRungComment(content)
+        }
+    }
+
+    // 출력 설명문 삭제
+    const removeComments = () => {
+        $('.selected').children().text('comments')
+        $('.selected').removeClass('comments')
+        writeProgByRemoveRungComment()
+    }
+
+    // 설명문 / 레이블 수신 - LD 설명문 / 레이블 설정
+    ipcRenderer.on(req.setDescription, function (event, opt) {
+        setLabelLine(opt, 'insert')
+    })
+
+    // 설명문 / 레이블 수신 - 메뉴로 부터 설명문 / 레이블 팝업창 띄우기
+    ipcRenderer.on(req.descriptionFromMenu, function (event, content) {
+        if (isSelected) opendLdLabel()
+        else alertWindow('설명문/라벨 을 편집할 라인이 선택되지 않았습니다')
+    });
+
+    // 출력  설명문 수신 - LD 출력문 설정
+    ipcRenderer.on(req.setOutDescription, function (event, content) {
+
+        // When the output description is empty
+        if (content.trim().length === 0) removeComments()
+
+        // When the output descriptions has more than one letter
+        else setComments(content, 'insert')
+    })
+
+    // 아이템 삭제
+    const removeLdSymbol = (action) => {
+
+        var selectedRung = findRung(ldTableX)
+
+        switch (ldSymbolCategory()) {
+
+            // 설명문/라벨 삭제
+            case 'label':
+            case 'description':
+
+                writeProgByRemoveRungLabel()
+
+                $('.row-selected').children('td:eq(0)').children().text(`Line ${ldTableX}`)
+                $('.row-selected').children('td:eq(1)').children().text('')
+                $('.row-selected').children().removeClass('label')
+
+                break
+
+            // 출력설명문 삭제
+            case 'comments':
+                removeComments()
+                break
+
+            // 세로 연결선 삭제
+            case 'verticalLink':
+
+                writeProgByRemoveEntity('vertical')
+
+                $(`.ld-v-${ldTableX}-${ldTableY}`).remove()
+                $(`tr:eq(${ldTableX}) td:eq(${ldTableY})`).addClass('selected')
+                $('.selected').attr('hasSymbol', 1)
+
+                break
+
+            // Delete the function
+            case 'func':
+            case 'funcBlock':
+
+                var targetFunc = getFuncInfo(ldTableX, ldTableY)
+
+                var varName = targetFunc.varName
+                var funcPosX = Number(targetFunc.posX)
+                var funcPosY = Number(targetFunc.posY)
+                var funcSize = targetFunc.size
+
+                if ( action !== 'line') {
+                    if (ldSymbolCategory() === 'func') {
+                        writeProgByRemoveFunc(funcPosX, funcPosY)
+                    } else {
+                        // writeProgByRemoveFuncBlock
+                    }
+                }
+
+                for (var i = funcPosX; i < funcPosX + funcSize; i++) {
+                    for (var j = funcPosY; j < funcPosY + 2; j++) {
+                        var targetCell = $(`tr:eq(${i}) td:eq(${j})`)
+                        targetCell.children().text('')
+                        targetCell.attr('hasSymbol', 0).removeClass('func').removeAttr('title')
+                    }
+                }
+
+                var funcVarCell = []
+                var funcVarSymbol = $(`div[funcPosX='${funcPosX}'][funcPosY='${funcPosY}'][type="funcVar"]`)
+
+                if (funcVarSymbol.length !== 0) {
+                    funcVarSymbol.each(function () {
+                        funcVarCell.push([$(this).attr('class').split('-')[1], $(this).attr('class').split('-')[2]])
+                    })
+                }
+
+                for (var i in funcVarCell) {
+                    $(`tr:eq(${funcVarCell[i][0]}) td:eq(${funcVarCell[i][1]})`).attr('hasSymbol', 0).removeAttr('title')
+                }
+
+                $(`div[funcPosX='${funcPosX}'][funcPosY='${funcPosY}']`).remove()
+
+                break
+
+            // 가로 연결선, 코일, 접점 삭제
+            default:
+
+                if (ldSymbolCategory() !== undefined) {
+
+                    if (ldSymbolCategory() === 'funcVar') {
+
+                        var targetFunc = getFuncInfo(ldTableX, ldTableY)
+
+                        var funcPosX = targetFunc.posX
+                        var funcPosY = targetFunc.posY
+                        var funcSize = targetFunc.size
+
+                        var funcParam
+                        var paramIdx
+
+                        if (ldTableY > funcPosY) {
+                            if (ldTableX === funcPosX + funcSize - 2) funcParam = 'return'
+                            else funcParam = 'outParam'
+                        } else {
+                            funcParam = 'inParam'
+                        }
+
+                        if (funcParam === 'return') paramIdx = 0
+                        else paramIdx = ldTableX - funcPosX
+
+                        if ( action !== 'line') writeProgByRemoveFuncEntity(funcPosX, funcPosY, funcParam, paramIdx)
+                    } else {
+                        if ( action !== 'line') writeProgByRemoveEntity('entity')
+                    }
+
+                    $(`.ld-${ldTableX}-${ldTableY}`).remove()
+                    $(`.ld-v-${ldTableX}-${ldTableY}`).remove()
+                    $('.selected').attr('hasSymbol', 0).removeAttr('title')
+                    $('.selected').children().text('')
+
+                    // Delete output description space when coil is deleted
+                    if ($('.selected').index() === ldContactNum) {
+                        var commentsCell = $('.selected').next()
+                        commentsCell.children().text('')
+                        commentsCell.removeClass('comments')
+                    }
+                }
+                break
+        }
+
+        var findLastLine = row => {
+            if ($(`tr:eq(${row})`).children('[hasSymbol="0"]').length === ldContactNum) {
+                findLastLine(row - 1)
+            } else {
+                return lastLine = row
+            }
+        }
+
+        findLastLine(ldTableX)
+
+        chkError(selectedRung[0], selectedRung[1])
+
+        for (var i = selectedRung[0]; i < selectedRung[1] + 1; i++) {
+            var newRung = findRung(i)
+            chkError(newRung[0], newRung[1])
+        }
+    }
+
+    // Key up/down/left/right event
+    function moveToNextCell(event) {
+        getCurrentPos()
+
+        switch (event.keyCode) {
+            case 37: // left
+                if (ldTableX === 0 && ldTableY === 0) {
+                    ldTableX = ldRowNum - 1
+                    ldTableY = ldColNum - 1
+                } else if (ldTableY === 0) {
+                    ldTableY = ldColNum - 1
+                    ldTableX -= 1
+                } else if (isLdVertical) {
+                    break
+                } else if ($(`.ld-v-${ldTableX}-${ldTableY - 1}`).length !== 0) {
+                    $('.selected').removeClass('selected')
+                    $(`.ld-v-${ldTableX}-${ldTableY - 1}`).addClass('selected')
+                    ldTableY -= 1
+                    return
+                } else {
+                    ldTableY -= 1
+                }
+                break
+            case 38: // up
+                if (isLdVertical) {
+                    break
+                } else if ($(`.ld-v-${ldTableX - 1}-${ldTableY}`).length !== 0) {
+                    $('.selected').removeClass('selected')
+                    $(`.ld-v-${ldTableX - 1}-${ldTableY}`).addClass('selected')
+                    ldTableX -= 1
+                    return
+                } else {
+                    ldTableX -= 1
+                }
+
+                break
+            case 39: // right
+                if (ldTableX === ldRowNum - 1 && ldTableY === ldColNum - 1) {
+                    ldTableY = 0
+                    ldTableX = 0
+                } else if (ldTableY === ldColNum - 1) {
+                    ldTableY = 0
+                    ldTableX += 1
+                } else if ($(`.ld-v-${ldTableX}-${ldTableY}`).length !== 0) {
+                    if (isLdVertical) {
+                        ldTableY = Number(ldTableY) + 1
+                        break
+                    }
+                    $('.selected').removeClass('selected')
+                    $(`.ld-v-${ldTableX}-${ldTableY}`).addClass('selected')
+                    return
+                } else {
+                    ldTableY += 1
+                }
+                break
+            case 40: // down
+                if (ldTableX === ldRowNum - 1) {
+                    ldTableX = 0
+                } else if ($(`.ld-v-${ldTableX}-${ldTableY}`).length !== 0) {
+                    if (isLdVertical) {
+                        ldTableX = Number(ldTableX) + 1
+                        break
+                    }
+                    $('.selected').removeClass('selected')
+                    $(`.ld-v-${ldTableX}-${ldTableY}`).addClass('selected')
+                    return
+                } else {
+                    ldTableX += 1
+                }
+                break
+        }
+
+        deselectCell()
+
+        if (ldTableY === 0) {
+            $(`tr:eq(${ldTableX})`).addClass('row-selected')
+        } else {
+            if (isLdVertical) {
+                switch (event.keyCode) {
+                    case '39': // right
+                        $(`.ld-v-${ldTableX}-${ldTableY - 1}`).removeClass('selected')
+                        break
+                    case '40': // down
+                        $(`.ld-v-${ldTableX - 1}-${ldTableY}`).removeClass('selected')
+                        break
+                }
+            }
+            $(`tr:eq(${ldTableX}) td:eq(${ldTableY})`).addClass('selected')
+        }
+    }
+
+    // 해당 심볼에 대한 정보 저장
+    const setTmpSymbolClass = () => {
+
+        switch (ldSymbolCategory()) {
+            case 'label':
+            case 'description':
+                tmpSymbol = readProgByRungLabel()
+                break
+
+            case 'comments':
+                tmpSymbol = {
+                    content: readProgByRungComment()
+                }
+                break
+
+            case 'func':
+            case 'funcBlock':
+
+                if (ldSymbolCategory() === 'func') {
+                    tmpSymbol = getFuncInfo(ldTableX, ldTableY)
+                } else {
+                    // tmpSymbol = readProgByFuncBlock(Number(funcPos[1]), Number(funcPos[2]))
+                }
+                break
+
+            case 'funcVar':
+                getFuncVarInfo('var', ldTableX, ldTableY)
+                break
+
+            default:
+                tmpSymbol = readProgByEntity(ldTableX, ldTableY)
+                break
+        }
+
+        tmpSymbol.symbol = ldSymbolCategory()
+    }
+
+    // 심볼 붙여넣기
+    const pasteLdSymbol = action => {
+
+
+        var targetSymbol = tmpSymbol.symbol
+
+        switch (targetSymbol) {
+
+            // 설명문/라벨 붙여넣기
+            case 'description':
+            case 'label':
+
+                if ($(`[class^="ld-${ldTableX}-"]`).length === 0) {
+                    if (action === 'load') {
+                        setLabelLine(tmpSymbol, 'load')
+                    } else {
+                        setLabelLine(tmpSymbol, 'insert')
+                    }
+                } else {
+                    alertWindow('심볼이 하나 이상 삽입된 라인에는 설명문/라벨 을 붙여넣기 할 수 없습니다')
+                }
+                break
+
+            // 출력 설명문 붙여넣기
+            case 'comments':
+
+                if (action === 'load') {
+                    setComments(tmpSymbol.content, 'load')
+                } else if ($('.selected').children().text() !== '' && $('.selected').index() === ldColNum - 1) {
+                    setComments(tmpSymbol.content, 'insert')
+                } else {
+                    alertWindow('출력 설명문을 붙여넣기 할 수 없습니다')
+                }
+                break
+
+            // 세로 연결선, 가로 연결선, 반전 접점 붙여넣기
+            case 'verticalLink':
+            case 'link':
+            case 'reverseContact':
+                if (canPutSymbol(targetSymbol)) {
+
+                    insertLdSymbol(targetSymbol)
+
+                    if (action !== 'load') {
+                        writeProgByAddEntity(targetSymbol, '', '', '', '', '')
+                    }
+
+                } else {
+                    alertWindow('해당 심볼을 붙여넣기 할 수 없는 위치입니다')
+                }
+                break
+
+            // 펑션 붙여넣기
+            case 'func':
+            case 'funcBlock':
+
+                // var currentPosX = ldTableX
+                // var currentPosY = ldTableY
+
+                if (canPutSymbol(targetSymbol)) {
+                    //펑션
+                    if (targetSymbol === 'func') {
+                        getFuncVarSymbol(targetSymbol, action, tmpSymbol.varName, tmpSymbol.funcName, tmpSymbol.inputNum, tmpSymbol.outputNum, tmpSymbol.input, tmpSymbol.output, tmpSymbol.return)
+                    
+                    // 펑션 블록
+                    } else {
+                        getFuncVarSymbol(targetSymbol, action, tmpSymbol.varName, tmpSymbol.funcName, tmpSymbol.inputNum, tmpSymbol.outputNum, tmpSymbol.input, tmpSymbol.output)
+                    }
+
+                    // //펑션 변수
+                    // if ( action !== 'load') {
+                    //     for (tmpSymbol.inputNum in tmpSymbol.input) {
+                    //         if(tmpSymbol.input[tmpSymbol.inputNum].entity !== null) {
+                    //             ldTableX += Number(tmpSymbol.inputNum)
+                    //             ldTableY -= 1
+
+                    //             deselectCell()
+                    //             $(`tr:eq(${ldTableX}) td:eq(${ldTableY})`).addClass('selected')
+
+                    //             insertLdSymbol('funcVar', tmpSymbol.input[tmpSymbol.inputNum].entity.varName)
+
+                    //             console.log(ldTableX+Number(tmpSymbol.inputNum), ldTableY-1, tmpSymbol.input[tmpSymbol.inputNum].entity)
+                    //         }
+                    //     }
+
+                    //     for (tmpSymbol.outputNum in tmpSymbol.output) {
+                    //         if(tmpSymbol.output[tmpSymbol.outputNum].entity !== null) {
+                    //             ldTableX += Number(tmpSymbol.outputNum)
+                    //             ldTableY += 1
+
+                    //             deselectCell()
+                    //             $(`tr:eq(${ldTableX}) td:eq(${ldTableY})`).addClass('selected')
+
+                    //             insertLdSymbol('funcVar', tmpSymbol.output[tmpSymbol.outputNum].entity.varName)
+                    //             console.log(ldTableX+Number(tmpSymbol.outputNum), ldTableY+1, tmpSymbol.output[tmpSymbol.outputNum].entity)
+                    //         }
+                    //     }
+
+                    //     deselectCell()
+                    //     $(`tr:eq(${currentPosX}) td:eq(${currentPosY})`).addClass('selected')
+
+                    //     ldTableX = currentPosX
+                    //     ldTableY = currentPosY
+
+                    // }
+
+                    
+
+                } else {
+                    alertWindow('해당 펑션을 붙여넣기 할 수 없는 위치입니다')
+                }
+                break
+
+            case 'funcVar':
+
+                insertLdSymbol(targetSymbol, tmpSymbol.varName)
+
+                if (action !== 'load') {
+                    console.log(targetSymbol, tmpSymbol)
+                    getLocalVarSymbol(targetSymbol, tmpSymbol.varName, tmpSymbol.keyword, tmpSymbol.dataType, tmpSymbol.memory, tmpSymbol.initVal, 'insert')
+                } else {
+                    getLocalVarSymbol(targetSymbol, tmpSymbol.varName, tmpSymbol.keyword, tmpSymbol.dataType, tmpSymbol.memory, tmpSymbol.initVal, 'load')
+                }
+
+                break
+
+            // 코일, 접점 붙여넣기 (반전접점 제외)
+            default:
+
+                if (canPutSymbol(targetSymbol)) {
+                    getLocalVarSymbol(targetSymbol, tmpSymbol.varName, tmpSymbol.keyword, tmpSymbol.dataType, tmpSymbol.memory, tmpSymbol.initVal, action)
+                    insertLdSymbol(targetSymbol)
+                } else {
+                    var korName
+
+                    if (targetSymbol.toLowerCase().includes('coil')) {
+                        korName = '코일'
+                    } else {
+                        korName = '접점'
+                    }
+
+                    alertWindow(`해당 위치에서는 ${korName}을 붙여넣기 할 수 없습니다`)
+                }
+
+                break
+        }
+
+        if (action !== 'load') {
+            chkError()
+        }
+
+    }
+
+    // 잘라내기, 복사, 붙여넣기, 삭제, 편집취소, 재실행
+    ipcRenderer.on(req.editAll, (event, _action) => {
+        // getCurrentPos()
+
+        switch (_action) {
+            case action.cut:    // 잘라내기
+                setTmpSymbolClass()
+                removeLdSymbol()
+                break
+
+            case action.paste:  // 붙여넣기
+                pasteLdSymbol()
+                break
+
+            case action.copy:   // 복사
+                setTmpSymbolClass()
+                break
+
+            case action.remove: // 삭제
+                removeLdSymbol()
+                break
+
+            case action.undo:   // 뒤로가기
+                uconsole.log("action5 = ", _action);
+                break
+
+            case action.redo:   // 재실행
+                uconsole.log("action6 = ", _action);
+                break
+        }
+
+    });
+
+    // 라인 삽입
+    const insertLdLine = () => {
+
+        getCurrentPos()
+
+        // 선택된 셀이 있는지 체크
+        if (isSelected) {
+
+            var funcInLine = idx => {
+                return Math.ceil($(`[class^="ld-${idx}-"][type^="func-"]`).length / 2)
+            }
+
+            var addNewLine = idx => {
+                createLdRow(idx)
+                $(`tr:eq(${idx})`).children().attr('hasSymbol', 0)
+
+                for (var i = ldRowNum - 1; i > idx - 1; i--) {
+                    for (var j = 0; j < ldColNum; j++) {
+
+                        var newRow = $(`.ld-${i}-${j}`)
+                        var newVertical = $(`.ld-v-${i}-${j}`)
+
+                        $(`.ld-${i}-${j}[type^="func"]`).attr('funcPosX', Number($(`.ld-${i}-${j}[type^="func"]`).attr('funcPosX')) + 1)
+
+                        newRow.offset({ top: $(`tr:eq(${i + 1}) td:eq(${j})`).offset().top })
+                        newRow.addClass(`ld-${i + 1}-${j}`)
+                        newRow.removeClass(`ld-${i}-${j}`)
+
+                        newVertical.offset({ top: $(`tr:eq(${i + 1}) td:eq(${j})`).offset().top + 30 })
+                        newVertical.addClass(`ld-v-${i + 1}-${j}`)
+                        newVertical.removeClass(`ld-v-${i}-${j}`)
+                    }
+                }
+
+                ldRowNum += 1
+                setLineNum()
+
+                console.log(idx)
+                writeProgByAddLine(idx)
+            }
+
+            // 해당 라인에 펑션 2개 이상 있는 경우
+            if (funcInLine(ldTableX) > 1) {
+                alertWindow('선택된 라인에 펑션이 2개 이상 존재합니다')
+
+                // 해당 라인에 펑션이 1개 또는 없는 경우
+            } else {
+
+                // 해당 라인에 펑션이 1개 있는 경우
+                if (funcInLine(ldTableX) === 1) {
+
+                    var funcPosX = Number($(`[class^="ld-${ldTableX}-"][type^="func"]`).attr('funcPosX'))
+
+                    // 해당 펑션이 펑션의 제일 윗 부분이 아닌 경우
+                    if (funcPosX != ldTableX) {
+
+                        // 해당 펑션의 제일 윗 부분이 있는 라인에 펑션이 2개 이상 삽입된 경우
+                        if (funcInLine(funcPosX) > 1) {
+                            alertWindow('라인이 삽입될 위치에 펑션이 2개 이상 있습니다')
+
+                            // 해당 펑션의 제일 윗 부분의 위로 라인 삽입
+                        } else {
+                            addNewLine(funcPosX)
+                        }
+
+                        // 해당 펑션이 펑션의 제일 윗 부분인 경우
+                    } else {
+                        addNewLine(ldTableX)
+                    }
+
+                    // 해당 라인에 펑션이 없는 경우 
+                } else {
+                    addNewLine(ldTableX)
+                }
+            }
+        } else {
+            alertWindow('라인을 삽입할 위치가 선택되지 않았습니다')
+        }
+    }
+
+    // 라인 삽입
+    ipcRenderer.on(req.addLine, (event, action) => {
+        insertLdLine()
+    });
+
+    // 라인 삭제
+    const removeLdLine = () => {
+
+        // Check if there is a selected cell
+        if (isSelected) {
+
+            var opt = {
+                projPath: projPath,
+                progLabel: progLabel,
+                posX: ldTableX, 
+                funcs: [] 
+            }
+
+            // Delete the description if there is description
+            if (ldSymbolCategory() === 'label' || ldSymbolCategory() === 'description') {
+                removeLdSymbol()
+
+            // Delete all symbols and rearrange the others left     
+            } else {
+                for (var i = ldTableX; i < ldRowNum; i++) {
+                    for (var j = 1; j < ldColNum - 1; j++) {
+
+                        var oldRow = $(`.ld-${i}-${j}`)
+                        var oldVertical = $(`.ld-v-${i}-${j}`)
+
+                        // Delete all symbols in the selected line
+                        if (i === ldTableX) {
+
+                            if (oldRow.attr('type') !== undefined) {
+
+                                deselectCell()
+                                $(`tr:eq(${i}) td:eq(${j})`).addClass('selected')
+
+                                getCurrentPos()
+
+                                if ( oldRow.attr('funcPosX') !== undefined ) {
+                                    opt.funcs.push({
+                                        posX: oldRow.attr('funcPosX'),
+                                        posY: oldRow.attr('funcPosY')
+                                    })
+                                }
+                                
+                                removeLdSymbol('line')
+                            }
+
+                        // Rearrange the symbols left
+                        } else {
+                            var newTD = $(`tr:eq(${i - 1}) td:eq(${j})`)
+
+                            oldRow.offset({ top: newTD.offset().top })
+                            oldRow.addClass(`ld-${i - 1}-${j}`)
+                            oldRow.removeClass(`ld-${i}-${j}`)
+
+                            oldVertical.offset({ top: newTD.offset().top + 30 })
+                            oldVertical.addClass(`ld-v-${i - 1}-${j}`)
+                            oldVertical.removeClass(`ld-v-${i}-${j}`)
+
+                            //펑션 속성funcPosX 재설정
+                        }
+                    }
+                }
+            }
+
+            writeProgByRemoveLine(opt)
+
+            // Delete the line & Reset the line number
+            ldTable.deleteRow(ldTableX)
+            ldRowNum -= 1
+            setLineNum()
+
+        } else {
+            alertWindow('라인을 삭제할 위치가 선택되지 않았습니다')
+        }
+    }
+
+    // 라인 삭제
+    ipcRenderer.on(req.removeLine, (event, action) => {
+        removeLdLine()
+    });
+
+    // 셀 추가
+    ipcRenderer.on(req.addCell, (event, action) => {
+
+        uconsole.log("add Cell");
+    });
+
+    // 셀 삭제
+    ipcRenderer.on(req.removeCell, (event, action) => {
+
+        uconsole.log("remove Cell");
+    });
+
+    // [API] 마우스 포이트 변경 
+    ipcRenderer.on(req.symbol, (event, opt) => {
+        // var imgPath = "../../../../../src/resource/image";
+
+
+
+        ipcRenderer.sendToHost(opt.action);
+
+        switch (opt.action) {
+            case action.openedContact:
+                $('body').css("cursor", `url(${imgPath}/openedContact_org.png), auto`);
+                break;
+            case action.closedContact:
+                $('body').css("cursor", `url(${imgPath}/closedContact_org.png), auto`);
+                break;
+            case action.contactP:
+                $('body').css("cursor", `url(${imgPath}/contactP_org.png), auto`);
+                break;
+            case action.contactN:
+                $('body').css("cursor", `url(${imgPath}/contactN_org.png), auto`);
+                break;
+            case action.reverseContact:
+                $('body').css("cursor", `url(${imgPath}/reverseContact_org.png), auto`);
+                break;
+            case action.link:
+                $('body').css("cursor", `url(${imgPath}/link_org.png), auto`);
+                break;
+            case action.verticalLink:
+                $('body').css("cursor", `url(${imgPath}/verticalLink_org.png), auto`);
+                break;
+            case action.connectByLink:
+                $('body').css("cursor", `url(${imgPath}/connectByLink_org.png), auto`);
+                break;
+            case action.openedCoil:
+                $('body').css("cursor", `url(${imgPath}/openedCoil_org.png), default`);
+                break;
+            case action.closedCoil:
+                $('body').css("cursor", `url(${imgPath}/closedCoil_org.png), default`);
+                break;
+            case action.coilS:
+                $('body').css("cursor", `url(${imgPath}/coilS_org.png), default`);
+                break;
+            case action.coilR:
+                $('body').css("cursor", `url(${imgPath}/coilR_org.png), default`);
+                break;
+            case action.coilP:
+                $('body').css("cursor", `url(${imgPath}/coilP_org.png), default`);
+                break;
+            case action.coilN:
+                $('body').css("cursor", `url(${imgPath}/coilN_org.png), default`);
+                break;
+            case action.func:
+                $('body').css("cursor", `url(${imgPath}/func_org.png), default`);
+                break;
+            case action.funcBlock:
+                $('body').css("cursor", `url(${imgPath}/funcBlock_org.png), default`);
+                break;
+            case action.esc:
+                $('body').css("cursor", `url(${imgPath}/default_org.png), default`);
+                break;
+        }
+
+        currentPoint = opt.action;
+
+        // 단축키로 심볼 삽입
+        if (opt.isShortcut && isSelected) {
+
+            if ($('.program td').hasClass('selected')) {
+                getSymbolFromCursor()
+
+                if (currentPoint === 'reverseContact' || currentPoint === 'link') {
+                    var oldCell = $('.selected')
+                    $('.selected').next().addClass('selected')
+                    oldCell.removeClass('selected')
+                }
+
+                if (currentPoint === 'verticalLink') {
+                    deselectCell()
+                    $(`tr:eq(${ldTableX + 1}) td:eq(${ldTableY})`).addClass('selected')
+                }
+            }
+        }
+
+    });
+
+    //
+    const getLocalVarSymbol = (symbol, name, keyword, dataType, memory, initVal, action) => {
+
+        getCurrentPos()
+
+        // Show the detail when cursor is on the symbol
+        $('.selected').attr('title', `변수: ${name} \n키워드: ${keyword}\n타입: ${dataType} \n메모리 할당: ${memory} \n초기값: ${initVal}`)
+
+        if (symbol === 'funcVar') {
+
+            var targetFunc
+            var funcPosX
+            var funcPosY
+            var funcParam
+            var paramIdx
+
+            //insert, load
+            if ($('.selected').next().hasClass('func') || $('.selected').next().hasClass('funcBlock')) {
+
+                targetFunc = getFuncInfo(ldTableX, ldTableY + 1)
+                funcPosX = targetFunc.posX
+                funcPosY = targetFunc.posY
+                funcParam = 'inParam'
+
+            } else {
+
+                targetFunc = getFuncInfo(ldTableX, ldTableY - 1)
+                funcPosX = targetFunc.posX
+                funcPosY = targetFunc.posY
+
+                if ($('.selected').prev().hasClass('funcBlock')) {
+                    funcParam = 'outParam'
+                } else {
+
+                    var outputNum = targetFunc.outputNum
+
+                    if (ldTableX - funcPosX === outputNum - 1) funcParam = 'return'
+                    else funcParam = 'outParam'
+                }
+            }
+
+            if (funcParam === 'return') paramIdx = 0
+            else paramIdx = ldTableX - funcPosX
+
+            $(`.ld-${ldTableX}-${ldTableY}`).attr('funcPosX', funcPosX)
+            $(`.ld-${ldTableX}-${ldTableY}`).attr('funcPosY', funcPosY)
+
+            if (action !== 'load') writeProgByAddFuncEntity(funcPosX, funcPosY, funcParam, paramIdx, name, keyword, dataType, memory, initVal)
+
+        } else {
+            $('.selected').children().text(name)
+
+            if (action !== 'load') writeProgByAddEntity(symbol, name, keyword, dataType, memory, initVal)
+        }
+    }
+
+    // 로컬 변수 선택 값 받아오기
+    ipcRenderer.on(req.variableSelect, (event, localVarClass) => {
+
+        var keyword = localVarClass.keyword;  // 변수 종류
+        var name = localVarClass.name;  // 변수 이름
+        var dataType = localVarClass.dataType;  // 데이터 타입
+        var memory = localVarClass.memory;  // 메모리 주소(할당)
+        var initVal = localVarClass.initVal; // 초기값 
+        var eventStatus = localVarClass.eventStatus;    // eventStatus = 결과값 : "enter" or undefined )
+
+        console.log(localVarClass)
+
+        if ($('.selected').prev().hasClass('func') || $('.selected').next().hasClass('func')) {
+            insertLdSymbol('funcVar', name)
+            getLocalVarSymbol('funcVar', name, keyword, dataType, memory, initVal, 'insert')
+        } else {
+
+            var targetSymbol
+
+            if (currentPoint === 'esc') {
+                targetSymbol = $(`.ld-${ldTableX}-${ldTableY}`).attr('type')
+            } else {
+                targetSymbol = currentPoint
+            }
+
+            insertLdSymbol(targetSymbol)
+            getLocalVarSymbol(targetSymbol, name, keyword, dataType, memory, initVal, 'insert')
+        }
+
+        var connectWithFunc = false
+
+        // Check if the previous cell which has the symbol has a function 
+        for (var i = ldTableY - 1; i > 0; i--) {
+            var currentCell = $(`tr:eq(${ldTableX}) td:eq(${i})`)
+            if (currentCell.attr('hasSymbol') == 0) {
+                continue
+            } else {
+                if (currentCell.hasClass('func')) {
+                    connectWithFunc = true
+                    break
+                } else {
+                    break
+                }
+            }
+        }
+
+        setTimeout(function () {
+
+            var oldCell = $('.selected')
+
+            // Fill out as a link when coil is inserted
+            if (currentPoint.toLowerCase().includes('coil')) {
+                if (!connectWithFunc) {
+                    fillOutByLink(ldTableY)
+                    $(`tr:eq(${ldTableX + 1}) td:eq(1)`).addClass('selected')
+                    ldTableX += 1
+                } else {
+                    $('.selected').prev().addClass('selected')
+                    ldTableY -= 1
+                }
+            } else {
+                $('.selected').next().addClass('selected')
+                ldTableY += 1
+            }
+            oldCell.removeClass('selected')
+        }, 50)
+
+    })
+
+    // 펑션의 입력 또는 출력 최대 개수 표시 가능한지 유효성 체크
+    ipcRenderer.on(req.validFunc, (event, maxNum) => {
+        getCurrentPos()
+
+        var isValid = true
+
+        if (!$('.selected').hasClass('func')) {
+            for (var i = ldTableX + 2; i < ldTableX + maxNum + 1; i++) {
+                for (var j = ldTableY; j < ldTableY + 2; j++) {
+                    if ($(`.ld-${i}-${j}`).length !== 0 || i >= ldRowNum) {
+                        isValid = false
+                        break
+                    }
+                }
+            }
+        }
+
+        ipcRenderer.send(req.validFuncReturn, {
+            vaild: isValid,
+            content: "펑션을 생성할 수 없습니다."
+        });
+    });
+
+    const getFuncVarSymbol = (type, action, varName, funcName, inputNum, outputNum, input, output, funcReturn) => {
+
+        var inputData = ''
+        var outputData = ''
+
+        var funcSize = inputNum > outputNum ? inputNum : outputNum
+
+        var funcSymbol = [['func-top-input', 'func-top-output']]
+
+        var funcPosX = ldTableX
+        var funcPosY = ldTableY
+
+        // Select the suitable shape for inserting function
+        if (inputNum < funcSize) {
+            for (var i = 1; i < inputNum; i++) {
+                funcSymbol.push(['func-input', 'func-output'])
+            }
+            for (var i = 1; i < funcSize - inputNum; i++) {
+                funcSymbol.push(['func-left', 'func-output'])
+            }
+            funcSymbol.push(['func-bottom-left', 'func-bottom-output'])
+        } else {
+            if (outputNum < funcSize) {
+                for (var i = 1; i < outputNum; i++) {
+                    funcSymbol.push(['func-input', 'func-output'])
+                }
+                for (var i = 1; i < funcSize - outputNum; i++) {
+                    funcSymbol.push(['func-input', 'func-right'])
+                }
+                funcSymbol.push(['func-bottom-input', 'func-bottom-right'])
+            } else {
+
+                for (var i = 1; i < outputNum - 1; i++) {
+                    funcSymbol.push(['func-input', 'func-output'])
+                }
+                funcSymbol.push(['func-bottom-input', 'func-bottom-output'])
+            }
+
+        }
+
+        funcSymbol.push([{ name: varName, funcName: funcName }])
+
+        // Insert the function 
+        for (var i = 0; i < funcSize + 1; i++) {
+            for (var j = 0; j < 2; j++) {
+                getCurrentPos()
+
+                var funcX = ldCurrentX + j * 80
+                var funcY = ldCurrentY + i * 50
+
+                ldTableX += i
+                ldTableY += j
+
+                var currentCell = $(`tr:eq(${ldTableX}) td:eq(${ldTableY})`)
+
+                if (i !== funcSize) {
+                    insertLdFunc(funcSize, ldTableX, ldTableY, funcX, funcY, funcSymbol[i][j])
+
+                    // Insert the parameter name of function
+                    if (j === 0) {
+                        if (i < input.length) {
+                            var inputName = input[i].name === undefined ? input[i].varName : input[i].name
+                            var inputType = input[i].dataType
+
+                            currentCell.children().text(inputName)
+                            currentCell.attr('title', `이름: ${inputName}\n타입: ${inputType} `)
+
+                            inputData += `${inputName}<${inputType}>`
+                        }
+                    } else {
+
+                        if (i < output.length + 1) {
+
+                            var isFuncReturn = i === output.length && type === 'func'
+
+                            if (type === 'funcBlock' && i === output.length) {
+                                break
+                            } else {
+                                var outputName = isFuncReturn ? funcReturn.name : output[i].name
+                                var outputType = isFuncReturn ? funcReturn.dataType : output[i].dataType
+
+                                if (outputName === undefined) {
+                                    outputName = isFuncReturn ? funcReturn.varName : output[i].varName
+                                }
+
+                                currentCell.children().text(outputName)
+                                currentCell.attr('title', `이름: ${outputName}\n타입: ${outputType} `)
+
+                                outputData += `${outputName}<${outputType}>`
+                            }
+                        }
+                    }
+                } else {
+                    currentCell.attr('hasSymbol', 1).attr('title', `이름: ${varName} \n펑션: ${funcName} \n입력: ${inputData} \n출력: ${outputData} `)
+                    if (j === 0) {
+                        insertLdFunc(funcSize, ldTableX, ldTableY, funcX, funcY, funcSymbol[i][j])
+                    }
+                }
+
+                if (type === 'func') {
+                    currentCell.addClass('func')
+                } else {
+                    currentCell.addClass('funcBlock')
+                }
+
+                $(`.ld-${ldTableX}-${ldTableY}`).attr('funcPosX', funcPosX)
+                $(`.ld-${ldTableX}-${ldTableY}`).attr('funcPosY', funcPosY)
+            }
+        }
+
+        ldTableX = funcPosX
+        ldTableY = funcPosY
+
+        if (action !== 'load') {
+
+            // 펑션 XML에 저장
+            if (type === 'func') {
+                var funcInfo = {
+                    projPath: projPath,
+                    progLabel: progLabel,
+                    posX: ldTableX,
+                    posY: ldTableY,
+                    varName: varName,
+                    funcName: funcName,
+                    input: action === 'insert' ? [] : input,
+                    output: action === 'insert' ? [] : output,
+                    return: action === 'insert' ? {
+                        varName: funcReturn.varName,
+                        dataType: funcReturn.dataType
+                    } : funcReturn
+                }
+
+                if ( action === 'insert' ) {
+                    for (inputNum in input) {
+                        funcInfo.input.push({
+                            varName: input[inputNum].varName,
+                            dataType: input[inputNum].dataType
+                        })
+                    }
+
+                    for (outputNum in output) {
+                        funcInfo.output.push({
+                            varName: output[outputNum].varName,
+                            dataType: output[outputNum].dataType
+                        })
+                    }
+                } else {
+                    getFuncVarInfo('func', ldTableX, ldTableY)
+                }
+
+                console.log(funcInfo)
+                writeProgByAddFunc(funcInfo)
+
+                // 펑션블록 XML에 저장
+            } else {
+                // var funcBlockInfo = {
+                //     projPath: projPath,
+                //     progLabel: progLabel,
+                //     posX: ldTableX,
+                //     posY: ldTableY,
+                //     varName: varName,
+                //     funcName: funcName,
+                //     input: [],
+                //     output: []
+                // }
+
+                // for ( inputNum in input ) {
+                //     funcInfo.input.push({
+                //         varName: input[inputNum].name,
+                //         dataType: input[inputNum].dataType
+                //     })
+                // }
+
+                // for ( outputNum in output ) {
+                //     funcInfo.output.push({
+                //         varName: output[outputNum].name,
+                //         dataType: output[outputNum].dataType
+                //     })
+                // }
+
+                // writeProgByAddFuncBlock(funcBlockInfo)
+            }
+        }
+    }
+
+    // 펑션 변수 선택 값 받아오기
+    ipcRenderer.on(req.funcVariableSelect, (event, funcVarClass) => {
+
+        var type = funcVarClass.type
+
+        var varName = funcVarClass.varName
+        var funcName = funcVarClass.funcName
+
+        var inputNum = funcVarClass.inputNum; // 입력 파라미터 개수
+        var outputNum = funcVarClass.outputNum; // 출력 파라미터 개수
+
+        var input = funcVarClass.input; // 입력 배열
+        var output = funcVarClass.output; // 출력 배열
+
+        var funcReturn = funcVarClass.return
+
+        // change the variable name of function
+        if ($('.selected').hasClass('func')) {
+            console.log('only change name')
+
+        } else {
+            if (type === 'func') {
+                getFuncVarSymbol('func', 'insert', varName, funcName, inputNum, outputNum, input, output, funcReturn)
+            } else {
+                getFuncVarSymbol('funcBlock', 'insert', varName, funcName, inputNum, outputNum, input, output)
+            }
+
+            var oldCell = $('.selected')
+            $('.selected').next().next().addClass('selected')
+            oldCell.removeClass('selected')
+
+            ldTableY += 2
+        }
+
+        chkError()
+
+        // AI 모듈 이름 등록
+        if (typeof funcVarClass.isAi !== 'undefined' && funcVarClass.isAi) {
+            writeAiByAdd(funcVarClass.funcName);
+        }
+    });
+
+    var getFuncInfo = (row, col) => {
+
+        var currentSymbol = $(`.ld-${row}-${col}`)
+
+        if ($(`.ld-${row}-${col - 1}`).attr('type') === 'func-name') {
+            currentSymbol = $(`.ld-${row}-${col - 1}`)
+        }
+
+        var funcPosX = currentSymbol.attr('funcPosX')
+        var funcPosY = currentSymbol.attr('funcPosY')
+
+        var targetFunc = readProgByFunc(funcPosX, funcPosY)
+
+        if (targetFunc.varName === undefined) targetFunc = tmpSymbol
+
+        var inputNum = targetFunc.inputNum
+        var outputNum = targetFunc.outputNum
+        var funcSize = inputNum > outputNum ? inputNum + 1 : outputNum + 1
+
+        targetFunc.posX = Number(funcPosX)
+        targetFunc.posY = Number(funcPosY)
+        targetFunc.size = funcSize
+
+        return targetFunc
+    }
+
+    var getFuncVarInfo = (target, row, col) => {
+
+        var targetFunc
+        var inputEntity
+        var outputEntity
+        var returnEntity
+
+        switch (target) {
+            case 'var':
+
+                targetFunc = getFuncInfo(row, col)
+                var paramIdx = ldTableX-targetFunc.posX
+                inputEntity = targetFunc.input[paramIdx].entity
+                outputEntity = targetFunc.output[paramIdx].entity
+                returnEntity = targetFunc.return.entity
+
+                // Input
+                if(targetFunc.posY > col) {
+                    if(inputEntity !== null) tmpSymbol = inputEntity
+
+                } else {
+
+                    // Return
+                    if (paramIdx === targetFunc.outputNum-1) {
+                        if(returnEntity !== null) tmpSymbol = returnEntity
+
+                    // Output
+                    } else {
+                        if(outputEntity !== null) tmpSymbol = outputEntity
+                    }
+                }
+
+                break
+            
+            case 'func':
+
+                targetFunc = tmpSymbol
+                targetFunc.posX = ldTableX
+                targetFunc.posY = ldTableY
+
+                returnEntity = targetFunc.return.entity
+
+                const pasteFuncVar = symbol =>{
+                    insertLdSymbol('funcVar', symbol.varName)
+                    getLocalVarSymbol('funcVar', symbol.varName, symbol.keyword, symbol.dataType, symbol.memory, symbol.initVal, 'load')
+                }
+
+                for (var i in targetFunc.input) {
+
+                    inputEntity = targetFunc.input[i].entity
+
+                    if (inputEntity !== null) {
+
+                        deselectCell()
+                        $(`tr:eq(${targetFunc.posX+Number(i)}) td:eq(${targetFunc.posY-1})`).addClass('selected')
+
+                        getCurrentPos()
+
+                        pasteFuncVar(inputEntity)
+                    }
+                }
+
+                for ( var i in targetFunc.output) {
+
+                    outputEntity = targetFunc.output[i].entity
+
+                    if (outputEntity !== null) {
+
+                        deselectCell()
+                        $(`tr:eq(${targetFunc.posX+Number(i)}) td:eq(${targetFunc.posY+2})`).addClass('selected')
+
+                        getCurrentPos()
+
+                        pasteFuncVar(outputEntity)
+                    }
+                }
+
+                if (returnEntity !== null) {
+
+                    deselectCell()
+                    $(`tr:eq(${targetFunc.posX+Number(targetFunc.outputNum)-1}) td:eq(${targetFunc.posY+2})`).addClass('selected')
+
+                    getCurrentPos()
+
+                    pasteFuncVar(returnEntity)
+                }
+
+                break
+        }
+    }
+
+    // 접점수 증가
+    ipcRenderer.on(req.addContactNum, (event, message) => {
+
+        if (ldContactNum >= 20) {
+            alertWindow('최대 접점수는 20개 입니다 (접점수의 범위: 10 ~ 20)')
+        } else {
+
+            $('#ld-table').find('tr').each(function () {
+                var td = $(this)[0].insertCell(ldColNum - 2)
+                td.innerHTML = '<div class="ld-td"></div>'
+                clickLdElem(td)
+            })
+
+            for (var i = 0; i < ldRowNum; i++) {
+                var oldLastCol = $(`.ld-${i}-${ldContactNum}`)
+                oldLastCol.offset({ left: $(`tr:eq(${i}) td:eq(${ldContactNum + 1})`).offset().left })
+                oldLastCol.addClass(`ld-${i}-${ldContactNum + 1}`)
+                oldLastCol.removeClass(`ld-${i}-${ldContactNum}`)
+
+                $(`tr:eq(${i}) td:eq(${ldContactNum})`).attr('hasSymbol', 0)
+            }
+
+            ldColNum += 1
+            ldContactNum += 1
+        }
+    })
+
+    // 접점수 감소
+    ipcRenderer.on(req.removeContactNum, (event, message) => {
+
+        if (ldContactNum > 10) {
+
+            var canAddContact = true
+
+            if ($(`[class^="ld-"][class$="${ldContactNum - 1}"][type!="link"]`).length !== 0) {
+                canAddContact = false
+            }
+
+            if (!canAddContact) {
+                alertWindow('삭제될 위치에 심볼이 존재합니다')
+            } else {
+                for (var i = 0; i < ldRowNum; i++) {
+                    const ldTableIdx = $(`tr:eq(${i}) td:eq(${ldContactNum - 1})`)
+                    const targetSymbol = $(`.ld-${i}-${ldContactNum - 1}`)
+
+                    if (targetSymbol.attr('type') === 'link') {
+                        targetSymbol.remove()
+
+                        if (ldTableIdx.attr('hasSymbol') == 2) {
+                            $(`.ld-v-${i}-${ldContactNum - 1}`).remove()
+                        }
+                    }
+
+                    ldTableIdx.remove()
+
+                    var oldLastCol = $(`.ld-${i}-${ldContactNum}`)
+                    oldLastCol.offset({ left: $(`tr:eq(${i}) td:eq(${ldContactNum - 1})`).offset().left })
+                    oldLastCol.addClass(`ld-${i}-${ldContactNum - 1}`)
+                    oldLastCol.removeClass(`ld-${i}-${ldContactNum}`)
+                }
+
+                ldContactNum -= 1
+                ldColNum -= 1
+            }
+        } else {
+            alertWindow('최소 접점수는 10개 입니다 (접점수의 범위: 10 ~ 20)')
+        }
+    });
+
+
+
+    // 설명문 / 레이블 팝업창
+    var descriptionWindow = function (type, content) {
+
+        ipcRenderer.send(req.descriptionWindowToMain, {
+            type: type,
+            content: content
+        });
+    };
+
+    // Open the description/label popup
+    const opendLdLabel = () => {
+
+        // 설명문/라벨 팝업창 열기
+        if ($(`[class^="ld-${ldTableX}-"]`).length === 0) {
+            descriptionWindow(selectedText(0)[0], selectedText(0)[1])
+
+            // 해당 라인에 심볼이 하나 이상 존재할 경우 설명문/라벨 삽입 불가
+        } else {
+            alertWindow('심볼이 하나 이상 삽입된 라인에는 설명문/라벨 을 삽입할 수 없습니다')
+        }
+    }
+
+    //
+    const openLdPopup = (eventStatus) => {
+
+        const isLastCol = $('.selected').index() === ldColNum - 1
+
+        // Fist Column
+        if ($('.program').find('.row-selected').length !== 0) {
+            opendLdLabel()
+
+            // Open the output description popup
+        } else if (isLastCol && selectedText().trim().length !== 0) {
+            var content = selectedText() === 'comments' ? '' : selectedText()
+            ipcRenderer.send(req.outDescriptionWindowToMain, content)
+
+            // Open the popup for the symbol
+        } else {
+            if (selectedText().trim().length !== 0 || $('.selected').hasClass('func')) {
+
+                // Open func popup with name
+                if ($('.selected').hasClass('func')) {
+
+                    var targetFunc = getFuncInfo(ldTableX, ldTableY)
+
+                    var nameClass = {
+                        name: targetFunc.varName,
+                        funcName: targetFunc.funcName
+                    }
+
+                    ipcRenderer.send(req.funcSelectWindowToMain, nameClass)
+
+                    // Open varible select popup with name
+                } else {
+                    ipcRenderer.send(req.variableSelectWindowToMain, {
+                        projPath: projPath,
+                        projName: projName,
+                        plcName: plcName,
+                        progName: progName,
+                        className: className,
+                        varType: '',
+                        name: $('.selected').children().text(),
+                        eventStatus: eventStatus,
+                        currentDataType: ''       // 데이터 타입이 있는경우 
+                    });
+                }
+            } else {
+                var funcInput = $(`.ld-${ldTableX}-${ldTableY + 1}`).attr('type')
+                var funcOutput = $(`.ld-${ldTableX}-${ldTableY - 1}`).attr('type')
+
+                // Open variable select popup of function's input parameter
+                if (funcInput !== undefined) {
+                    if (funcInput.includes('input')) {
+                        ipcRenderer.send(req.variableSelectWindowToMain, {
+                            projPath: projPath,
+                            projName: projName,
+                            plcName: plcName,
+                            progName: progName,
+                            className: className,
+                            varType: '',
+                            name: $('.selected').next().children().text(),
+                            eventStatus: eventStatus,
+                            currentDataType: ''       // 데이터 타입이 있는경우 
+                        });
+                    }
+                }
+
+                // Open variable select popup of function's output parameter
+                if (funcOutput !== undefined) {
+                    if (funcOutput.includes('output')) {
+                        ipcRenderer.send(req.variableSelectWindowToMain, {
+                            projPath: projPath,
+                            projName: projName,
+                            plcName: plcName,
+                            progName: progName,
+                            className: className,
+                            varType: '',
+                            name: $('.selected').prev().children().text(),
+                            eventStatus: eventStatus,
+                            currentDataType: ''       // 데이터 타입이 있는경우 
+                        });
+                    }
+                }
+
+            }
+        }
+    }
+
+
+
+    // 엔터키 이벤트
+    function ldEnterPress(event) {
+        if (event.keyCode === 13) {
+            openLdPopup("enter")
+        }
+    }
+
+    // ld 에디터 탭 열 때 기존에 작업했던 내용 불러오기
+    const loadLd = (row, col) => {
+
+        $(`tr:eq(${row}) td:eq(${col})`).addClass('selected')
+
+        getCurrentPos()
+
+        pasteLdSymbol('load')
+
+        deselectCell()
+    }
+
+    // -----------------------------------------------------------------------------------------
+
+    // 선택된 셀이 속한 렁의 시작과 마지막 라인 찾기
+    const findRung = (row) => {
+
+        var hasSymbolInLine = (row, type) => {
+            switch (type) {
+                case 'vertical':
+                    return $(`[class^="ld-v-${row}-"]`).length !== 0
+                case 'func-top':
+                    return $(`[class^="ld-${row}-"][type^="func-top"]`).length
+                case 'func-name':
+                    return $(`[class^="ld-${row}-"][type="func-name"]`).length
+                case 'func':
+                    return $(`[class^="ld-${row}-"][type^="func"]`).length
+                default:
+                    return $(`[class^="ld-${row}-"]`).length !== 0
+            }
+        }
+
+        // 렁이 시작하는 라인 찾기
+        const findRungStart = row => {
+
+            // 해당 라인에 펑션의 탑이 아닌 다른 부분이 있는 경우
+            if (hasSymbolInLine(row, 'func-top') !== hasSymbolInLine(row, 'func')) {
+                return findRungStart(row - 1)
+
+                // 해당 라인에 펑션 없거나 펑션의 탑만 있는 경우
+            } else {
+
+                // 윗 라인에서 삽입된 세로 연결선이 없거나 윗 라인이 빈 라인 또는 해당 라인이 제일 윗 라인인 경우
+                if (!hasSymbolInLine(row - 1, 'vertical') || row === 0) {
+                    return row
+
+                    // 윗 라인에서 삽입된 세로 연결선이 있는 경우
+                } else {
+                    return findRungStart(row - 1)
+                }
+            }
+        }
+
+        // 렁이 끝나는 라인 찾기
+        const findRungEnd = row => {
+
+            // 해당 라인에 펑션의 이름이 아닌 다른 부분이 있는 경우
+            if (hasSymbolInLine(row, 'func-name') !== hasSymbolInLine(row, 'func')) {
+                return findRungEnd(row + 1)
+
+                // 해당 라인에 펑션 없거나 펑션의 이름만 있는 경우
+            } else {
+
+                // 해당 라인에 세로 연결선 있는 경우
+                if (hasSymbolInLine(row, 'vertical')) {
+                    return findRungEnd(row + 1)
+
+                    // 해당 라인에 세로 연결선 없는 경우
+                } else {
+                    return row
+                }
+
+            }
+        }
+        return [findRungStart(row), findRungEnd(row)]
+    }
+
+    // Error
+    const chkError = (first, last) => {
+
+        if (first === undefined || last === undefined) {
+            first = findRung(ldTableX)[0]
+            last = findRung(ldTableX)[1]
+        }
+
+        var hasVertical = (first, last) => {
+
+            for (var i = first; i < last + 1; i++) {
+                if ($(`[class^="ld-v-${i}-"]`).length === 0) {
+                    if (i === last) return false
+                    else continue
+                } else {
+                    return true
+                }
+            }
+        }
+
+        var hasFunc = (first, last) => {
+
+            for (var i = first; i < last + 1; i++) {
+                if ($(`tr:eq(${i}) .func`).length === 0) {
+                    if (i === last) return false
+                    else continue
+                } else {
+                    return true
+                }
+            }
+
+        }
+
+        var isError = (first, last) => {
+
+            // for (var i = first; i < last + 1; i++) {
+            //     for (var j = 1; j < ldContactNum + 1; j++) {
+
+            //         var cell = (i, j) => {
+            //             if ($(`tr:eq(${i}) td:eq(${j})`).attr('hasSymbol') == 0 ) {
+            //                 return 'empty'
+            //             } 
+            //         }
+
+            //         var symbol = (i, j) =>{
+            //             if ($(`.ld-${i}-${j}`).length === 0 ) {
+            //                 return 'empty'
+            //             } else {
+            //                 return $(`.ld-${i}-${j}`).attr('type')
+            //             }
+            //         }
+
+            //         var vertical = (i, j) => {
+            //             if ($(`.ld-v-${i}-${j}`).length === 0) {
+            //                 return false
+            //             } else {
+            //                 return true
+            //             }
+            //         }
+
+            //         if (cell(i, j) !== 'empty') {
+
+            //             console.log(i ,j )
+
+            //             // 세로 연결선 에러 체크
+            //             if (vertical(i, j).length !== 0 ) {
+            //                 if (symbol(i, j) === 'empty' && symbol(i, j+1) === 'empty' && vertical(i-1, j) === 'false') return true
+            //                 if (symbol(i+1, j) === 'empty' && symbol(i+1, j+1) === 'empty' && vertical(i+1, j) === 'false') return true
+            //             } else {
+
+            //             }
+
+            //         }
+            //     }
+            // }
+
+
+
+            //  펑션을 포함하는 병렬 렁
+            if (hasVertical(first, last) && hasFunc(first, last)) {
+                // console.log('vertical, func')
+            }
+
+            // 펑션을 포함하지 않는 병렬 렁
+            if (hasVertical(first, last) && !hasFunc(first, last)) {
+
+                // 각각 하나의 심볼만 가지는 단일 렁 
+                if ($(`.ld-v-${first}-1`).length !== 0 && $(`.ld-v-${first}-2`).length === 0) {
+                    if ($(`.ld-${last}-1`).length === 0 || $(`.ld-${last}-1`).attr('type') === 'link') return true
+                    else return false
+                }
+
+                for (var i = 2; i < ldContactNum; i++) {
+                    if ($(`.ld-v-${first}-${i}`).length !== 0 && $(`.ld-${first}-${i}`).attr('type') !== 'link') {
+                        if ($(`.ld-v-${first}-${i - 1}`).length !== 0) {
+                            if ($(`.ld-${last}-${i}`).length === 0 || $(`.ld-${last}-${i}`).attr('type') === 'link') return true
+                            else return false
+                        } else {
+                            return true
+                        }
+                    }
+                }
+
+                // 여러 개 심볼을 가지는 단일 렁
+
+                // 다중 렁
+
+            }
+
+            // 펑션을 포함하는 직렬 렁
+            if (!hasVertical(first, last) && hasFunc(first, last)) {
+
+                if ($(`[class^="ld-${first}-"]`).length === ldContactNum) {
+
+                    for (var i = first; i < last + 1; i++) {
+
+                        if ($(`[class^="ld-${i}-"][type*="input"]`).length !== 0) {
+                            posY = Number($(`[class^="ld-${i}-"][type*="input"]`).attr('class').split('-')[2])
+                            if ($(`tr:eq(${i}) td:eq(${posY - 1})`).attr('hasSymbol') == 0) return true
+                        }
+
+                        if ($(`[class^="ld-${i}-"][type*="left"]`).length !== 0) {
+                            posY = Number($(`[class^="ld-${i}-"][type*="left"]`).attr('class').split('-')[2])
+                            if ($(`tr:eq(${i}) td:eq(${posY - 1})`).attr('hasSymbol') != 0) return true
+                        }
+
+                        if ($(`[class^="ld-${i}-"][type*="output"]`).length !== 0) {
+                            posY = Number($(`[class^="ld-${i}-"][type*="output"]`).attr('class').split('-')[2])
+                            if ($(`tr:eq(${i}) td:eq(${posY + 1})`).attr('hasSymbol') == 0) return true
+                        }
+
+                        if ($(`[class^="ld-${i}-"][type*="right"]`).length !== 0) {
+                            posY = Number($(`[class^="ld-${i}-"][type*="right"]`).attr('class').split('-')[2])
+                            if ($(`tr:eq(${i}) td:eq(${posY + 1})`).attr('hasSymbol') != 0) return true
+                        }
+                    }
+
+                } else {
+                    return true
+                }
+            }
+
+            // 코일과 접점으로만 이루어진 직렬 렁(펑션, 세로선 없음)
+            if (!hasVertical(first, last) && !hasFunc(first, last)) {
+                if ($(`[class^="ld-${first}-"]`).length !== ldContactNum && $(`[class^="ld-${first}-"]`).length !== 0) return true
+            }
+
+            // 양 옆 셀이 모두 비어있는 경우 에러
+            // for ( var i = first; i < last + 1; i++ ) {
+            //     for ( var j = 1; j < ldContactNum +1; j++ ) {
+            //         if ( $(`.ld-${i}-${j}`).length !== 0 ) {
+
+            //         }
+            //     }
+            // }
+
+            if ($(`[class^="ld-${first}-"]`).length === 0) return false
+        }
+
+        //
+        if (!isError(first, last)) {
+            for (var i = first; i < last + 1; i++) {
+                $(`tr:eq(${i})`).removeClass('error')
+            }
+        } else {
+            for (var i = first; i < last + 1; i++) {
+                $(`tr:eq(${i})`).addClass('error')
+            }
+        }
+    }
+
+
+
+
+    /* 팝업 메뉴 및 문자열 검색 */
+
+    // 실행 취소
+    var undoFunc = function (target) {
+
+    }
+
+    // 재 실행 
+    var redoFunc = function (target) {
+
+    }
+
+    // 문자열 검색 팝업창
+    var findStrFunc = function () {
+        $('.searchBox').show();
+        $('#changehValue').parent().hide();
+        $('#changeButton').hide();
+        $('#changeAllButton').hide();
+        $('#searchValue').focus();
+        $('#searchValue').select();
+    }
+
+    // 문자열 바꾸기 팝업창
+    var changeStrFunc = function () {
+        $('.searchBox').show();
+        $('#changehValue').parent().show();
+        $('#changeButton').show();
+        $('#changeAllButton').show();
+        $('#searchValue').focus();
+        $('#searchValue').select();
+    }
+
+    var imgPath = "../../../../../src/resource/image";
+    const contextMenuItem = [
+        {
+            id: 'esc',
+            label: '화살표로',
+            icon: resourcePath + '/image/context/search_org.png',
+            enabled: true,
+            click() {
+                $('body').css("cursor", `url(${imgPath}/default_org.png), default`);
+                currentPoint = action.esc;
+            }
+        },
+        { type: 'separator' },
+        {
+            id: 'undo',
+            label: '실행 취소',
+            icon: resourcePath + '/image/index/menu/menu_undo.png',
+            enabled: true,
+            click() {
+
+            }
+        },
+        {
+            id: 'redo',
+            label: '재 실행',
+            icon: resourcePath + '/image/index/menu/menu_redo.png',
+            enabled: true,
+            click() {
+
+            }
+        },
+        { type: 'separator' },
+        {
+            id: 'cut',
+            label: '잘라내기',
+            icon: resourcePath + '/image/index/menu/menu_cut.png',
+            enabled: true,
+            click() {
+                setTmpSymbolClass();
+                removeLdSymbol();
+            }
+        },
+        {
+            id: 'copy',
+            label: '복사',
+            icon: resourcePath + '/image/index/menu/menu_copy.png',
+            enabled: true,
+            click() {
+                setTmpSymbolClass();
+            }
+        },
+        {
+            id: 'paste',
+            label: '붙여넣기',
+            icon: resourcePath + '/image/index/menu/menu_paste.png',
+            enabled: true,
+            click() {
+            }
+        },
+        {
+            id: 'remove',
+            label: '삭제',
+            icon: resourcePath + '/image/index/menu/menu_remove.png',
+            enabled: true,
+            click() {
+                removeLdSymbol();
+            }
+        },
+        { type: 'separator' },
+        {
+            id: 'add-line',
+            label: '라인 삽입',
+            icon: resourcePath + '/image/index/menu/menu_addLine.png',
+            enabled: true,
+            click() {
+                insertLdLine();
+            }
+        },
+        {
+            id: 'remove-line',
+            label: '라인 삭제',
+            icon: resourcePath + '/image/index/menu/menu_removeLine.png',
+            enabled: true,
+            click() {
+                removeLdLine();
+            }
+        },
+        { type: 'separator' },
+        {
+            id: 'findStr',
+            label: '문자열 찾기',
+            icon: resourcePath + '/image/index/menu/menu_findStr.png',
+            enabled: true,
+            click() {
+
+            }
+        },
+        { type: 'separator' },
+        {
+            id: 'open-label',
+            label: '설명문/레이블 입력',
+            icon: resourcePath + '/image/index/menu/menu_replaceStr.png',
+            enabled: true,
+            click() {
+                opendLdLabel();
+            }
+        }
+    ];
+
+    // contextMenu 메뉴 설정 (팝업 메뉴 설정)
+    var setContextMenuEvent = function () {
+
+        $('#ld-table').contextmenu(function (e) {
+
+            var contextMenu = Menu.buildFromTemplate(contextMenuItem);
+
+            if ($('.program').find('.selected').length === 0) {
+                contextMenu.getMenuItemById('cut').enabled = false;
+                contextMenu.getMenuItemById('copy').enabled = false;
+                contextMenu.getMenuItemById('paste').enabled = false;
+            }
+
+            contextMenu.popup();
+        });
+
+    }
+
+    setContextMenuEvent();
+
+    // LD 에디터 처음 생성시 초기값 가져오기
+    ipcRenderer.on(req.editor, function (event, opt) {
+        projPath = opt.projPath;
+        projName = opt.projName;
+        plcName = opt.plcName;
+        progName = opt.progName;
+        className = opt.className;
+        progLabel = opt.progLabel;
+        parentProgType = opt.parentProgType;
+
+        // ld 프로그램 불러오기
+        var ld = xmlManager.readLdProg({
+            projPath: opt.projPath,
+            projName: opt.projName,
+            plcName: opt.plcName,
+            progName: opt.progName,
+            progLabel: progLabel     //  프로그램 타입 ?? - 스켄 / 펑션 / 펑션 블럭 / 테스크
+        });
+
+        ldRowNum = ld.row
+        ldColNum = ld.col
+        ldContactNum = ldColNum - 2
+
+        createLdTable()
+
+        for (var i in ld.datas) {
+            for (j in ld.datas[i]) {
+                tmpSymbol = ld.datas[i][j]
+
+                // Load functions or function blocks
+                if ('funcData' in tmpSymbol) {
+
+                    tmpSymbol = tmpSymbol.funcData
+
+                    if (tmpSymbol.return !== undefined) {
+                        tmpSymbol.symbol = 'func'
+                    } else {
+                        tmpSymbol.symbol = 'funcBlock'
+                    }
+
+                    tmpSymbol.inputNum = tmpSymbol.input.length
+                    tmpSymbol.outputNum = tmpSymbol.output.length + 1
+
+                    var funcPosX = Number(tmpSymbol.posX)
+                    var funcPosY = Number(tmpSymbol.posY)
+
+                    loadLd(funcPosX, funcPosY)
+
+                    var tmpFunc = tmpSymbol
+
+                    tmpFunc.input.map(function (param) {
+                        if (param.entity.length !== 0) {
+                            tmpSymbol = param.entity[0]
+                            tmpSymbol.posX = funcPosX + tmpFunc.input.indexOf(param)
+                            tmpSymbol.posY = funcPosY - 1
+                            tmpSymbol.symbol = 'funcVar'
+
+                            loadLd(tmpSymbol.posX, tmpSymbol.posY)
+                        }
+                    })
+
+                    tmpFunc.output.map(function (param) {
+                        if (param.entity.length !== 0) {
+                            tmpSymbol = param.entity[0]
+                            tmpSymbol.posX = funcPosX + tmpFunc.output.indexOf(param)
+                            tmpSymbol.posY = funcPosY + 2
+                            tmpSymbol.symbol = 'funcVar'
+
+                            loadLd(tmpSymbol.posX, tmpSymbol.posY)
+                        }
+                    })
+
+                    tmpSymbol = tmpFunc
+
+                    if (tmpSymbol.symbol === "func" && tmpFunc.return.entity[0] !== undefined) {
+                        tmpSymbol = tmpFunc.return.entity[0]
+                        tmpSymbol.posX = funcPosX + tmpFunc.outputNum - 1
+                        tmpSymbol.posY = funcPosY + 2
+                        tmpSymbol.symbol = 'funcVar'
+
+                        loadLd(tmpSymbol.posX, tmpSymbol.posY)
+                    }
+
+                } else {
+
+                    // Load descriptions or labels
+                    if (tmpSymbol.symbol === undefined) {
+                        tmpSymbol.symbol = tmpSymbol.type
+                        tmpSymbol.posX = i
+                        tmpSymbol.posY = 0
+                    }
+
+                    // Load output descriptions
+                    if (tmpSymbol.type === undefined && tmpSymbol.symbol === undefined) {
+                        tmpSymbol.symbol = 'comments'
+                        tmpSymbol.posX = i
+                        tmpSymbol.posY = ldContactNum + 1
+                    }
+
+                    loadLd(tmpSymbol.posX, tmpSymbol.posY)
+                }
+            }
+        }
+
+        lastLine = ldTableX
+
+        // setTimeout( function() { chkError() }, 50)
+    })
+
+    // 문자열 검색 ( 메뉴 또는 툴바 또는 단추키) 열기 
+    ipcRenderer.on(req.findStr, function (event, message) {
+        findStrFunc();
+    });
+
+    // 문자열 바꾸기 ( 메뉴 또는 툴바 또는 단추키) 열기 
+    ipcRenderer.on(req.changeStr, function (event, message) {
+        changeStrFunc();
+    });
+
+    // 검색 입력 박스 Enter 키 동작
+    $('.searchBox > input').on('keydown', function (key) {
+        if (key.keyCode == 13) {
+            search($('searchValue').val());
+        }
+    })
+
+    // 검색 박스 닫기
+    $('#searchBoxClose').on('click', function () {
+        $('.searchBox').hide();
+    });
+
+    // 검색 하기
+    $('#searchButton').on('click', function () {
+        search($('#searchValue').val());
+    });
+
+
+
+    window.onkeydown = function (event) {
+
+        if (event.ctrlKey && event.keyCode == 86) {//
+            pasteLdSymbol()
+        } else if (event.ctrlKey && event.keyCode == 67) { //
+            setTmpSymbolClass()
+        } else if (event.ctrlKey && event.keyCode == 88) { //
+            setTmpSymbolClass()
+            removeLdSymbol()
+        } else if (event.key == 'Escape') {
+            $('body').css("cursor", `url(${imgPath}/default_org.png), default`);
+            currentPoint = action.esc
+        }
+    };
+
+    // 접점 + 접점 + 접점 + 코일 인 RUNG 
+    var rungSample1 = function () {
+        var rung = {
+            element: []
+        };
+
+        var contact = {
+            type: 'contact',
+            entity: []
+        };
+
+        var coil = {
+            type: 'coil',
+            entity: []
+        };
+
+        contact.entity.push({
+            varName: 'IN0',
+            symbol: 'openedContact',
+            start: "true"
+        });
+        rung.element.push(contact);
+
+        contact = {
+            type: 'contact',
+            entity: []
+        };
+        contact.entity.push({
+            varName: 'IN1',
+            symbol: 'closedContact',
+            start: "false"
+        });
+        rung.element.push(contact);
+
+        contact = {
+            type: 'contact',
+            entity: []
+        };
+        contact.entity.push({
+            varName: 'IN2',
+            symbol: 'openedContact',
+            start: "false"
+        });
+        rung.element.push(contact);
+
+        coil.entity.push({
+            varName: 'OUT1',
+            symbol: 'openedCoil',
+            start: "false"
+        });
+        rung.element.push(coil);
+
+        return rung;
+    }
+
+    // 접점 + 병렬(접점) + 코일 인 RUNG 
+    var rungSample2 = function () {
+        var rung = {
+            element: []
+        };
+
+        var contact = {
+            type: 'contact',
+            entity: []
+        };
+        contact.entity.push({
+            varName: 'IN0',
+            symbol: 'openedContact',
+            start: "true"
+        });
+        rung.element.push(contact);
+
+        contact = {
+            type: 'contact',
+            entity: []
+        };
+        contact.entity.push({
+            varName: 'IN1',
+            symbol: 'openedContact',
+            start: "false"
+        });
+        contact.entity.push({
+            varName: 'IN2',
+            symbol: 'openedContact',
+            start: "false"
+        });
+        rung.element.push(contact);
+
+        var coil = {
+            type: 'coil',
+            entity: []
+        };
+        coil.entity.push({
+            varName: 'OUT1',
+            symbol: 'openedCoil'
+        });
+        rung.element.push(coil);
+
+        return rung;
+    }
+
+    // 접점 한개 + 펑션 + 코일(첫번째와 연결) 인 경우
+    var rungSample3 = function () {
+
+        var rung = {
+            element: []
+        };
+
+        var contact = {
+            type: 'contact',
+            entity: []
+        };
+        contact.entity.push({
+            varName: 'IN0',
+            symbol: 'openedContact',
+            start: "true"
+        });
+        rung.element.push(contact);
+
+        var func = {
+            type: 'func',
+            varName: "ai",
+            funcName: "aiMod",
+            inParam: [],
+            outParam: [],
+            return: {}
+        };
+        func.inParam.push({     // 펑션 파라미터 변수 이름 또는 값 중 1개만 입력
+            name: "EN",         // 펑션 파라미터 이름
+            dataType: "BOOL",   // 펑션 파라미터 타입
+            varName: "",        // 펑션 파이미터 변수 이름 
+            value: "",          // 펑션 파라미터 값 ( 상수값 또는 메모리 지정(%MI0.0.1) )
+        });
+
+        func.outParam.push({
+            name: "ENO",
+            dataType: "BOOL",
+            varName: "OUT0",
+            value: "",
+        });
+
+        func.return = {
+            name: "return",
+            dataType: "BOOL",
+            varName: "OUT1",
+            value: "",
+        };
+        rung.element.push(func);
+
+        return rung;
+    }
+
+
+    // rungValue insert samples
+    var writeProg = function () {
+
+        if ($('.program').find('.error').length === 0) {
+
+            var rungLines = []
+            var rungs = []
+
+            for (var i = 0; i < lastLine + 1; i++) {
+                if ($(`tr:eq(${i})`).children('[hasSymbol="0"]').length !== ldContactNum) {
+                    rungLines.push(findRung(i))
+                    i = findRung(i)[1]
+                } else {
+                    continue
+                }
+            }
+
+            for (var i in rungLines) {
+
+                var rung = { element: [] }
+
+                // 
+                if (rungLines[i][0] === rungLines[i][1]) {
+                    var rung = { element: [] }
+
+                    for (var j = 1; j < ldContactNum + 1; j++) {
+                        if (readProgByEntity(rungLines[i][0], j).symbol === "link") {
+                            continue
+                        } else {
+
+                            rung.element.push({
+                                type: 'contact',
+                                entity: [
+                                    {
+                                        varName: readProgByEntity(rungLines[i][0], j).varName,
+                                        symbol: readProgByEntity(rungLines[i][0], j).symbol,
+                                        start: 'false'
+                                    }
+                                ]
+                            })
+                        }
+                    }
+                    rung.element[0].entity[0].start = "true"
+                    rung.element[rung.element.length - 1].type = "coil"
+                    rungs.push(rung)
+
+                    // 펑션 포함하는 직렬 렁
+                } else {
+
+                    var rungLine = rungLines[i][0]
+
+                    for (var j = 1; j < ldContactNum + 1; j++) {
+                        if ($(`tr:eq(${rungLine}) td:eq(${j})`).hasClass('func')) {
+                            if ($(`.ld-${rungLine}-${j}`).attr('type') === 'func-top-input') {
+                                var targetFunc = readProgByFunc(rungLine, j)
+
+                                var rungFunc = {
+                                    type: 'func',
+                                    varName: targetFunc.varName,
+                                    funcName: targetFunc.funcName,
+                                    inParam: [],
+                                    outParam: [],
+                                    return: {
+                                        name: targetFunc.return.varName,
+                                        dataType: targetFunc.return.dataType,
+                                        varName: targetFunc.return.entity.varName,
+                                        value: "",
+                                        isLinked: ""
+                                    }
+                                }
+
+                                for (var i in targetFunc.input) {
+                                    rungFunc.inParam.push({
+                                        name: targetFunc.input[i].varName,
+                                        dataType: targetFunc.input[i].dataType,
+                                        varName: targetFunc.input[i].entity === null ? "" : targetFunc.input[i].entity.varName,
+                                        value: "",
+                                        isLinked: ""
+                                    })
+                                }
+
+                                for (var i in targetFunc.output) {
+                                    rungFunc.outParam.push({
+                                        name: targetFunc.output[i].varName,
+                                        dataType: targetFunc.output[i].dataType,
+                                        varName: targetFunc.output[i].entity === null ? "" : targetFunc.output[i].entity.varName,
+                                        value: "",
+                                        isLinked: ""
+                                    })
+                                }
+
+                                rung.element.push(rungFunc)
+
+                            } else {
+                                continue
+                            }
+                        } else {
+
+                            if ($(`tr:eq(${rungLine}) td:eq(${j})`).attr('hasSymbol') == 0 || readProgByEntity(rungLine, j).symbol === 'link') {
+                                continue
+                            } else if ($(`.ld-v-${rungLine}-${j}`).length !== 0 && readProgByEntity(rungLine + 1, j) !== undefined) {
+
+                                var parallel = readProgByEntity(rungLine + 1, j)
+
+                                rung.element.push({
+                                    type: 'contact',
+                                    entity: [
+                                        {
+                                            varName: readProgByEntity(rungLine, j).varName,
+                                            symbol: readProgByEntity(rungLine, j).symbol,
+                                            start: 'false'
+                                        },
+                                        {
+                                            varName: parallel.varName,
+                                            symbol: parallel.symbol,
+                                            start: 'false'
+                                        }
+                                    ]
+                                })
+
+                            } else {
+                                rung.element.push({
+                                    type: 'contact',
+                                    entity: [
+                                        {
+                                            varName: readProgByEntity(rungLine, j).varName,
+                                            symbol: readProgByEntity(rungLine, j).symbol,
+                                            start: 'false'
+                                        }
+                                    ]
+                                })
+                            }
+                        }
+                    }
+
+                    rung.element[0].entity[0].start = "true"
+                    rung.element[rung.element.length - 1].type = "coil"
+
+                    for (var i in rung.element) {
+
+                        if (rung.element[i].type === 'func') {
+
+                            for (var j in rung.element[i].inParam) {
+                                if (rung.element[i].inParam[j].varName.trim().length === 0) {
+                                    rung.element[i].inParam[j].varName = rung.element[Number(i) - 1].entity[0].varName
+                                }
+                            }
+
+                            for (var j in rung.element[i].outParam) {
+                                if (rung.element[i].outParam[j].varName.trim().length === 0) {
+                                    rung.element[i].outParam[j].varName = rung.element[Number(i) + 1].entity[0].varName
+                                }
+                            }
+                        }
+                    }
+                    rungs.push(rung)
+                }
+            }
+
+            console.log(rungLines)
+            console.log(rungs)
+
+            xmlManager.writeProg({
+                projPath: projPath,
+                projName: projName,
+                progLabel: progLabel,
+                plcName: plcName,
+                progName: progName,                 // 프로그램 이름
+                parentProgType: parentProgType,     // 프로그램의 부모 타입
+                rungs: rungs
+            });
+            ipcRenderer.send(req.writeProgExampleFromReturn, {
+                isOk: true
+            });
+        } else {
+            // alertWindow('빌드 할 수 없습니다.')
+            ipcRenderer.send(req.writeProgExampleFromReturn, {
+                isOk: false
+            });
+        }
+
+    };
+
+    // 1차년도 과제용 
+    //  ========================
+    ipcRenderer.on(req.writeProgExample, function (event, opt) {
+        writeProg();
+    });
+    //  ========================
+
+    // ==============================================
+
+    // 수평선 채우기 저장 하기
+    var writeProgByAddLinks = function (opt) {
+        console.log(opt)
+        xmlManager.writeProgByAddLinks(opt);
+    }
+
+    // 접점 또는 코일 저장 하기
+    var writeProgByAddEntity = function (symbol, name, keyword, dataType, memory, initVal) {
+
+        xmlManager.writeProgByAddEntity({
+            projPath: projPath,     // 프로젝트 경로
+            progLabel: progLabel,   // 프로그램의 고유한 타입 ( :: selected.label 값 )
+            posX: ldTableX,         // 라인 번호
+            posY: ldTableY,         // 열 번호 
+            varName: name,          // 변수 이름 
+            symbol: symbol,          // 접점 기호 
+            dataType: dataType,     // 데이터 타입
+            keyword: keyword,       // 변수 타입
+            memory: memory,         // 메모리 할당 정보
+            initVal: initVal        // 초기화 값
+        });
+
+
+    };
+
+    // 접점 또는 코일 삭제 하기
+    var writeProgByRemoveEntity = function (action) {
+
+        xmlManager.writeProgByRemoveEntity({
+            projPath: projPath,         // 프로젝트 경로
+            progLabel: progLabel,       // 프로그램의 고유한 타입 
+            posX: ldTableX,             // 라인 번호
+            posY: ldTableY,             // 열 번호 
+            action: action           // replace / remove 
+        });
+
+    };
+
+    // 접점 또는 코일 가져오기
+    var readProgByEntity = function (posX, posY) {
+
+        var data = xmlManager.readProgByEntity({
+            projPath: projPath,         // 프로젝트 경로
+            progLabel: progLabel,
+            posX: posX,             // 라인 번호
+            posY: posY          // 열 번호 
+        });
+
+        return data;
+    };
+
+    // rungComment 추가 
+    var writeProgByAddRungComment = function (content) {
+        xmlManager.writeProgByAddRungComment({
+            projPath: projPath,         // 프로젝트 경로
+            progLabel: progLabel,
+            posX: ldTableX,             // 라인 번호
+            content: content          // 내용
+        });
+    }
+
+    // rungComment 삭제  
+    var writeProgByRemoveRungComment = function () {
+        xmlManager.writeProgByRemoveRungComment({
+            projPath: projPath,         // 프로젝트 경로
+            progLabel: progLabel,
+            posX: ldTableX,             // 라인 번호
+        });
+    }
+
+    // rungComment 가져오기 
+    var readProgByRungComment = function () {
+        var data = xmlManager.readProgByRungComment({
+            projPath: projPath,         // 프로젝트 경로
+            progLabel: progLabel,
+            posX: ldTableX             // 라인 번호
+        });
+
+        return data;
+    }
+
+    // rungLabel 추가 
+    var writeProgByAddRungLabel = function (type, content) {
+        xmlManager.writeProgByAddRungLabel({
+            projPath: projPath,         // 프로젝트 경로
+            progLabel: progLabel,
+            posX: ldTableX,             // 라인 번호
+            content: content,           // 내용
+            type: type                  // description / label
+        });
+    }
+
+    // rungLabel 삭제 
+    var writeProgByRemoveRungLabel = function () {
+        xmlManager.writeProgByRemoveRungLabel({
+            projPath: projPath,         // 프로젝트 경로
+            progLabel: progLabel,
+            posX: ldTableX             // 라인 번호
+        });
+    }
+
+    // rungLabel 가져 오기
+    var readProgByRungLabel = function () {
+        var data = xmlManager.readProgByRungLabel({
+            projPath: projPath,         // 프로젝트 경로
+            progLabel: progLabel,
+            posX: ldTableX             // 라인 번호
+        });
+
+        return data;
+    }
+
+
+    // AI 추가 
+    var writeAiByAdd = function (aiName) {
+
+        aiName = aiName.replace('AI-', '');
+        opt = {
+            projPath: projPath,
+            projName: projName,
+            plcName: plcName,
+            aiName: aiName.replace()
+        }
+
+        xmlManager.writeAiByAdd(opt);
+    }
+
+    // AI 삭제 
+    var writeAiByRemove = function (name) {
+        opt = {
+            projPath: projPath,
+            projName: projName,
+            plcName: plcName,
+            aiName: name
+        }
+
+        xmlManager.writeAiByRemove(opt);
+    }
+
+
+    // 펑션 저장 하기 
+    var writeProgByAddFunc = function (opt) {
+        xmlManager.writeProgByAddFunc(opt);
+    };
+
+    // 펑션 삭제 하기
+    var writeProgByRemoveFunc = function (posX, posY) {
+
+        xmlManager.writeProgByRemoveFunc({
+            projPath: projPath,     // 프로젝트 경로
+            progLabel: progLabel,   // 프로그램의 고유한 타입 
+            posX: posX,             // 라인 번호 
+            posY: posY              // 열 번호
+        });
+    };
+
+    // 펑션 가져오기
+    var readProgByFunc = function (posX, posY) {
+
+        var data = xmlManager.readProgByFunc({
+            projPath: projPath,
+            progLabel: progLabel,
+            posX: posX,             // 펑션의 시작 라인 번호
+            posY: posY              // 펑션의 시작 열 번호 
+        });
+
+        return data;
+    }
+
+    // 펑션의 엔터티 저장 하기
+    var writeProgByAddFuncEntity = function (posX, posY, param, index, name, keyword, dataType, memory, initVal) {
+
+        var opt = {
+            projPath: projPath,
+            progLabel: progLabel,
+            posX: posX,                    // 펑션의 시작 라인 번호
+            posY: posY,                    // 펑션의 시작 열 번호 
+            param: param,           // 파라미터 타입 (inParam / outParam / return)
+            index: index,                  // 추가하는 파라미터의 index
+            entity: {
+                varName: name,         // 파라미터 변수의 entity의 변수 이름 
+                symbol: 'none',             // 파라미터 변수의 entity의 심볼 기호 (상수 또는 변수값인 경우 : none / 심볼인 경우 : ~Contat or ~Coil or ~Link)
+                dataType: dataType,       // 파라미터 변수의 entity의 데이터 타입
+                keyword: keyword,         // 파라미터 변수의 entity의 변수 타입
+                memory: memory,             // 파라미터 변수의 entity의 메모리 할당 정보 
+                initVal: initVal             // 파라미터 변수의 entity의 초기화 값 
+            }
+        }
+
+        xmlManager.writeProgByAddFuncEntity(opt);
+    }
+
+    // 펑션의 엔터티 삭제 하기
+    var writeProgByRemoveFuncEntity = function (posX, posY, param, index) {
+        // <예제>
+        var opt = {
+            projPath: projPath,
+            progLabel: progLabel,
+            posX: posX,                // 펑션의 시작 라인 번호
+            posY: posY,                // 펑션의 시작 열 번호 
+            param: param,       // 파라미터 타입 (inParam / outParam / return)
+            index: index               // 추가하는 파라미터의 index
+        }
+
+        xmlManager.writeProgByRemoveFuncEntity(opt);
+    }
+
+
+
+    // 라인 추가 
+    var writeProgByAddLine = function (posX) {
+
+        xmlManager.writeProgByAddLine({
+            projPath: projPath,
+            progLabel: progLabel,
+            posX: posX      // 추가할 라인의 앞쪽의 X 값
+        });
+    };
+
+    // 라인 삭제
+    var writeProgByRemoveLine = function (opt) {
+
+        xmlManager.writeProgByRemoveLine(opt);
+    };
+
+    // 프로그램 가져오기
+    var readProg = function () {
+        // <예제>
+        var progLabel = "ld0";
+
+        var datas = xmlManager.readProg({
+            projPath: projPath,
+            progLabel: progLabel
+        });
+
+        uconsole.log(JSON.stringify(datas));
+        return datas
+    };
+
+
+    // html 내부 블럭 선택 방지
+    $('body').bind("selectstart", function (e) {
+        return false;
+    });
+
+</script>
+
+</html>

@@ -1,0 +1,274 @@
+<html>
+
+<head>
+    <script>window.$ = window.jQuery = require('jquery');</script>
+
+    <link rel="stylesheet" href="../../../resource/css/basic.css">
+    <link rel="stylesheet" href="../../../resource/css/popup/layout.css">
+
+</head>
+
+<body>
+    <div class="window-layout">
+        <div class="connect-network-layout serial">
+            <div class="box">
+                <div class="label">접속 설정</div>
+                <table>
+                    <colgroup>
+                        <col width="20%">
+                        <col width="40%">
+                        <col />
+                    </colgroup>
+                    <tbody>
+                        <tr>
+                            <td></td>
+                            <td><span>채널 1</span></td>
+                            <td><span>채널 2</span></td>
+                        </tr>
+                        <tr>
+                            <td><span>통신 형태 :</span></td>
+                            <td>
+                                <select id="deviceType1">
+                                    <option value="RS232" selected>RS232</option>
+                                    <option value="RS485">RS485</option>
+                                </select>
+                            </td>
+                            <td>
+                                <select id="deviceType2">
+                                    <option value="RS232" selected>RS232</option>
+                                    <option value="RS485">RS485</option>
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><span>통신 속도 :</span></td>
+                            <td>
+                                <select id="deviceSpeed1">
+                                    <option value="300">300</option>
+                                    <option value="600">600</option>
+                                    <option value="1200">1200</option>
+                                    <option value="2400">2400</option>
+                                    <option value="3600">3600</option>
+                                    <option value="4800">4800</option>
+                                    <option value="7200">7200</option>
+                                    <option value="9600" selected>9600</option>
+                                    <option value="19200">19200</option>
+                                    <option value="38400">38400</option>
+                                    <option value="57600">57600</option>
+                                    <option value="64000">64000</option>
+                                    <option value="76800">76800</option>
+                                    <option value="115200">115200</option>
+                                </select>
+                            </td>
+                            <td>
+                                <select id="deviceSpeed2">
+                                    <option value="300">300</option>
+                                    <option value="600">600</option>
+                                    <option value="1200">1200</option>
+                                    <option value="2400">2400</option>
+                                    <option value="3600">3600</option>
+                                    <option value="4800">4800</option>
+                                    <option value="7200">7200</option>
+                                    <option value="9600" selected>9600</option>
+                                    <option value="19200">19200</option>
+                                    <option value="38400">38400</option>
+                                    <option value="57600">57600</option>
+                                    <option value="64000">64000</option>
+                                    <option value="76800">76800</option>
+                                    <option value="115200">115200</option>
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><span>종단 저항 :</span></td>
+                            <td>
+                                <select id="terminationResister1">
+                                    <option>활성</option>
+                                    <option>비활성</option>
+                                </select>
+                            </td>
+                            <td>
+                                <select id="TerminationResister2">
+                                    <option>활성</option>
+                                    <option>비활성</option>
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><span>국번 :</span></td>
+                            <td><input type="text" id="identity1"></td>
+                            <td><input type="text" id="identity2"></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="button-layout">
+                    <button id="networkHigh">고급 설정</button>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="separate"></div>
+
+        <div class="action-network-layout">
+            <div class="box action-box">
+                <div class="label">통신 모드</div>
+                <table>
+                    <colgroup>
+                        <col width="13%">
+                        <col width="60%">
+                        <col />
+                    </colgroup>
+                    <tbody>
+                        <tr>
+                            <td>채널 1:</td>
+                            <td>
+                                <select>
+                                    <option>모드버스 RTU 서버</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button id="modbus1">모드버스 설정</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>채널 2:</td>
+                            <td>
+                                <select>
+                                    <option>모드버스 RTU 서버</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button id="modbus2">모드버스 설정</button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+
+            </div>
+        </div>
+
+        <div class="button-layout">
+            <button id="btnConfirm">확인</button>
+            <button id="cancel">취소</button>
+        </div>
+
+    </div>
+</body>
+
+<script type="text/javascript">
+
+    const rootPath = __dirname + '/../../../..';
+    const resourcePath = rootPath + "/src/resource";
+    const definePath = resourcePath + '/js/define';
+    const utilPath = resourcePath + '/js/util';
+
+    const req = require(definePath + '/req')
+
+    const uconsole = require(utilPath + '/utilConsole');
+
+    const { ipcRenderer } = require('electron');
+
+    var projName = '';
+    var projPath = '';
+    var netMod = '';
+    var plcName = '';
+    var networkName = '';
+    var modType = '';
+
+    var setData = function (opt) {
+        $('#deviceType1').val(opt.deviceType1);
+        $('#deviceType2').val(opt.deviceType2);
+        $('#deviceSpeed1').val(opt.deviceSpeed1);
+        $('#deviceSpeed2').val(opt.deviceSpeed2);
+        $('#terminationResister1').val(opt.terminationResister1);
+        $('#terminationResister2').val(opt.terminationResister2);
+        $('#identity1').val(opt.identity1);
+        $('#identity2').val(opt.identity2);
+    }
+
+    var getData = function () {
+        return {
+            deviceType1: $('#deviceType1').val(),
+            deviceType2: $('#deviceType2').val(),
+            deviceSpeed1: $('#deviceSpeed1').val(),
+            deviceSpeed2: $('#deviceSpeed2').val(),
+            terminationResister1: $('#terminationResister1').val(),
+            terminationResister2: $('#terminationResister2').val(),
+            identity1: $('#identity1').val(),
+            identity2: $('#identity2').val(),
+        };
+    }
+
+    // 네트워크 모듈 정보 받기
+    ipcRenderer.on(req.networkType, function (event, networkType) {
+
+        // projName = _projName;
+        // projPath = _projPath;
+        // netMod = _netMod;
+        // plcName = _plcName;
+        // networkName = _networkName;
+        // modType = _modType;
+
+        switch (networkType) {
+            case "serial":
+                $('.serial').show();
+                $('.action-network-layout').show();
+
+                $('.ethernet').hide();
+                break;
+
+            case "ethernet":
+                $('.serial').hide();
+                $('.action-network-layout').hide();
+
+                $('.ethernet').show();
+                break;
+        }
+    });
+
+
+
+    // 확인 
+    $('#btnConfirm').on('click', function () {
+        var data = getData();
+        uconsole.log(JSON.stringify(data));
+
+        // 데이터 저장 
+
+    });
+
+    // 닫기 - 창 닫기
+    $('#cancel').on('click', function () {
+        window.close();
+    });
+
+    // 고급 설정 열기
+    $('#networkHigh').on('click', function () {
+        ipcRenderer.send(req.netHighWindowToMain, "");
+    });
+
+    // 모드 버스 실행 
+    $('#modbus1').on('click', function () {
+        ipcRenderer.send(req.modbusWindowToMain, "1");
+    });
+
+    // 모드 버스 실행 
+    $('#modbus2').on('click', function () {
+        ipcRenderer.send(req.modbusWindowToMain, "2");
+    });
+
+    // 모드 버스 실행 
+    $('#modbus3').on('click', function () {
+        ipcRenderer.send(req.modbusWindowToMain, "3");
+    });
+
+    // html 내부 블럭 선택 방지
+    $('body').bind("selectstart", function (e) {
+        return false;
+    });
+
+</script>
+
+</html>

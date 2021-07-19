@@ -1,0 +1,164 @@
+<html>
+
+<head>
+    <script>window.$ = window.jQuery = require('jquery');</script>
+    <link rel="stylesheet" href="../../../resource/css/basic.css">
+    <link rel="stylesheet" href="../../../resource/css/popup/layout.css">
+
+</head>
+
+<body>
+    <div class="window-layout">
+        <div class="area-modbus-layout">
+            <div class="box">
+                <div class="label">메모리 영역 설정</div>
+                <table>
+                    <colgroup>
+                        <col width="60%">
+                        <col />
+                    </colgroup>
+                    <tbody>
+                        <tr>
+                            <td><span>비트 읽기 영역 시작 주소:</span></td>
+                            <td><input type="text" id="readBit"></td>
+                        </tr>
+                        <tr>
+                            <td><span>비트 쓰기 영역 시작 주소:</span></td>
+                            <td><input type="text" id="writeBit"></td>
+                        </tr>
+                        <tr>
+                            <td><span>워드 읽기 영역 시작 주소:</span></td>
+                            <td><input type="text" id="readWord"></td>
+                        </tr>
+                        <tr>
+                            <td><span>워드 쓰기 영역 시작 주소:</span></td>
+                            <td><input type="text" id="writeWord"></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="button-layout">
+            <button id="btnConfirm">확인</button>
+            <button id="cancel">취소</button>
+        </div>
+
+    </div>
+</body>
+
+<script type="text/javascript">
+
+    const rootPath = __dirname + '/../../../..';
+    const resourcePath = rootPath + '/src/resource';
+    const definePath = resourcePath + '/js/define';
+    const utilPath = resourcePath + '/js/util';
+    const rendererPath = resourcePath + '/js/renderer';
+
+    const req = require(definePath + '/req')
+
+    const { ipcRenderer } = require('electron');
+
+    const uconsole = require(utilPath + '/utilConsole');
+
+    const xmlManager = require(rendererPath + '/xmlManager');
+
+    var projPath = '';
+    var projName = '';
+    var netMod = '';
+    var plcName = '';
+    var netName = '';
+    var netType = '';
+    var base = '';
+    var slot = '';
+
+    var getData = function () {
+        return {
+            readBit: $('#readBit').val(),
+            readBitSize: $('#readBitSize').val(),
+            writeBit: $('#writeBit').val(),
+            writeBitSize: $('#writeBitSize').val(),
+            readWord: $('#readWord').val(),
+            readWordSize: $('#readWordSize').val(),
+            writeWord: $('#writeWord').val(),
+            writeWordSize: $('#writeWordSize').val()
+        }
+    };
+
+    var setData = function (data) {
+        $('#readBit').val(data.readBit);
+        $('#readBitSize').val(data.readBitSize);
+        $('#writeBit').val(data.writeBit);
+        $('#writeBitSize').val(data.writeBitSize);
+        $('#readWord').val(data.readWord);
+        $('#readWordSize').val(data.readWordSize);
+        $('#writeWord').val(data.writeWord);
+        $('#writeWordSize').val(data.writeWordSize);
+    }
+
+    // 네트워크 모듈 정보 받기 
+    ipcRenderer.on(req.modbusNum, (event, opt) => {
+
+        projPath = opt.projPath;
+        projName = opt.projName;
+        netName = opt.netName;
+        netType = opt.netType;
+        netMod = opt.netMod;
+        base = opt.base;
+        slot = opt.slot;
+        
+        // number 에 따라 설정된 모드버스 값 가져오기 ( 없다면 초기값 설정 )
+        var data = xmlManager.readModbus(projPath, projName, netType, netName, netMod, base, slot);
+        
+        if (typeof data !== 'undefined') {
+            setData(data);
+        }
+    });
+
+    // 확인 
+    $('#btnConfirm').on('click', function () {
+        var data = getData();
+
+        xmlManager.writeModbus({
+            projPath: projPath,
+            projName: projName,
+            netName: netName,
+            netType: netType,
+            netMod: netMod,
+            base: base,
+            slot: slot,
+            readBit: data.readBit,
+            readBitSize: "10",
+            writeBit: data.writeBit,
+            writeBitSize: "10",
+            readWord: data.readWord,
+            readWordSize: "10",
+            writeWord: data.writeWord,
+            writeWordSize: "10"
+        });
+
+        window.close();
+    });
+
+    // 취소
+    $('#cancel').on('click', function () {
+        window.close();
+    });
+
+    // ESC 키 - 창 닫기
+    window.onkeydown = function (event) {
+        if (event.key == 'Escape') {
+            window.close();
+        }
+    }
+
+    // html 내부 블럭 선택 방지
+    $('body').bind("selectstart", function (e) {
+        return false;
+    });
+
+    // TODO :
+
+</script>
+
+</html>

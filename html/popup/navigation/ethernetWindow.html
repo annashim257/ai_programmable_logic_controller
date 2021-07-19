@@ -1,0 +1,205 @@
+<html>
+
+<head>
+    <script>window.$ = window.jQuery = require('jquery');</script>
+
+    <link rel="stylesheet" href="../../../resource/css/popup/layout.css">
+
+</head>
+
+<body>
+    <div class="window-layout">
+        <div class="connect-network-layout ethernet">
+            <div class="box">
+                <div class="label">접속 설정</div>
+                <table>
+                    <colgroup>
+                        <col width="20%">
+                        <col width="10px">
+                        <col />
+                    </colgroup>
+                    <tbody>
+                        <tr>
+                            <td><span>ip 주소 :</span></td>
+                            <td></td>
+                            <td><input type="text" id="ip"></td>
+                        </tr>
+                        <tr>
+                            <td><span>넷마스크 :</span></td>
+                            <td></td>
+                            <td><input type="text" id="netmask"></td>
+                        </tr>
+                        <tr>
+                            <td><span>게이트웨이 :</span></td>
+                            <td></td>
+                            <td><input type="text" id="gateway"></td>
+                        </tr>
+                        <tr>
+                            <td><span>DNS :</span></td>
+                            <td></td>
+                            <td><input type="text" id="dns"></td>
+                        </tr>
+                        <tr>
+                            <td><span>국번 :</span></td>
+                            <td></td>
+                            <td><input type="text" id="mid"></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="button-layout">
+                    <button id="modbus">모드버스 설정</button>
+                </div>
+            </div>
+            
+        </div>
+
+        <div class="button-layout">
+            <button id="btnConfirm">확인</button>
+            <button id="cancel">취소</button>
+        </div>
+
+    </div>
+</body>
+
+<script type="text/javascript">
+
+    const rootPath = __dirname + '/../../../..';
+    const resourcePath = rootPath + "/src/resource";
+    const definePath = resourcePath + '/js/define';
+    const utilPath = resourcePath + '/js/util';
+    const rendererPath = resourcePath + '/js/renderer';
+
+
+    const req = require(definePath + '/req')
+    const config = require(definePath + '/config')
+    const uconsole = require(utilPath + '/utilConsole');
+    const { ipcRenderer } = require('electron');
+    const xmlManager = require(rendererPath + '/xmlManager');
+
+    var projName = '';  // 프로젝트 이름
+    var projPath = '';  // 프로젝트 경로
+    var netMod = '';    // 네트워크 모듈 이름
+    var plcName = '';   // PLC 이름
+    var netName = '';   // 네트워크 이름
+    var netType = '';   // 네트워크 타입
+
+    var base = '';  // 베이스 번호
+    var slot = '';  // 슬롯 번호
+
+    var getData = function () {
+        return {
+            ip : $('#ip').val(),
+            netmask : $('#netmask').val(),
+            gateway : $('#gateway').val(),
+            dns : $('#dns').val(),
+            mid : $('#mid').val()
+        }
+    }
+
+    var setData = function (opt) {
+        $('#ip').val(opt.ip);
+        $('#netmask').val(opt.netmask);
+        $('#gateway').val(opt.gateway);
+        $('#dns').val(opt.dns);
+        $('#mid').val(opt.mid);
+    }
+
+    // 네트워크 모듈 정보 받기
+    ipcRenderer.on(req.netType, function (event, opt) {
+
+        projPath = opt.projPath;
+        projName = opt.projName;
+        plcName = opt.plcName;
+        netMod = opt.netMod;    
+        netName = opt.netName;
+        netType = opt.netType;
+        base = opt.base;
+        slot = opt.slot;
+
+        var data = xmlManager.readNetMod({
+            projPath:projPath, 
+            projName:projName, 
+            netName:netName, 
+            netType:netType, 
+            netMod:netMod, 
+            base:base,
+            slot:slot
+        });
+
+        if ( typeof data !== 'undefined') {
+            setData(data);
+        }
+    });
+
+    // 확인 
+    $('#btnConfirm').on('click', function () {
+
+        var mod = getData();
+        
+        if ( mod.ip.trim().length === 0 ) {
+            popupUtil.alertWindow('ip 주소를 입력 하세요.');
+            return;
+        }
+        if ( mod.netmask.trim().length === 0 ) {
+            popupUtil.alertWindow('넷마스크를 입력 하세요.');
+            return;
+        }
+        if ( mod.gateway.trim().length === 0 ) {
+            popupUtil.alertWindow('게이트 웨이를 입력 하세요.');
+            return;
+        }
+        if ( mod.dns.trim().length === 0 ) {
+            popupUtil.alertWindow('DNS 주소를 입력 하세요.');
+            return;
+        }
+        if ( mod.mid.trim().length === 0 ) {
+            popupUtil.alertWindow('국번를 입력 하세요.');
+            return;
+        }
+
+        xmlManager.writeNetModToSet({
+            projPath:projPath,
+            projName:projName,
+            base:base,
+            slot:slot,
+            netName:netName,
+            plcName:plcName,
+            netMod:netMod,
+            netType: netType,
+            ip: mod.ip,
+            netmask: mod.netmask,
+            gateway: mod.gateway,
+            dns: mod.dns,
+            mid: mod.mid
+        });
+
+        window.close();
+    });
+
+    // 닫기 - 창 닫기
+    $('#cancel').on('click', function () {
+        window.close();
+    });
+
+    // 모드 버스 실행 
+    $('#modbus').on('click', function () {
+        ipcRenderer.send(req.modbusWindowToMain, {
+            projPath:projPath,
+            projName:projName,
+            netMod:netMod,
+            netName:netName,
+            netType:netType,
+            base:base,
+            slot:slot
+        });
+    });
+
+    // html 내부 블럭 선택 방지
+    $('body').bind("selectstart", function (e) {
+        return false;
+    });
+
+</script>
+
+</html>

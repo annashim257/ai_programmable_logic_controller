@@ -1,0 +1,92 @@
+<html>
+
+<head>
+    <script>window.$ = window.jQuery = require('jquery');</script>
+    <link rel="stylesheet" href="../../../resource/css/basic.css">
+    <link rel="stylesheet" href="../../../resource/css/popup/layout.css">
+</head>
+
+<body>
+    <div class="window-layout">
+        <div class="description-layout">
+            <table>
+                <colgroup>
+                    <col width="120px">
+                    <col />
+                </colgroup>
+                <tbody>
+                    <tr>
+                        <td><input type="radio" name="type" id="description" value="description" checked><label for="description">설명문</label></td>
+                        <td><input type="radio" name="type" id="label" value="label"><label for="label">레이블</label></td>
+                    </tr>
+                </tbody>
+            </table>
+            <textarea id="content"></textarea>
+        </div>
+        <div class="button-layout">
+            <button id="btnConfirm">확인</button>
+            <button id="cancel">취소</button>
+        </div>
+    </div>
+</body>
+
+<script type="text/javascript">
+
+    const rootPath = __dirname + '/../../../..';
+    const resourcePath = rootPath + '/src/resource';
+    const definePath = resourcePath + '/js/define';
+    const rendererPath = resourcePath + '/js/renderer';
+    const utilPath = resourcePath + '/js/util';
+
+    const req = require(definePath + '/req')
+
+    const uconsole = require(utilPath + '/utilConsole');
+
+    const { ipcRenderer } = require('electron');
+
+    const config = require(definePath + '/config');
+
+    // 설명문 / 라벨 수신
+    ipcRenderer.on(req.description, (event, opt) => {
+        switch (opt.type) {
+            case config.TYPE_DESCRITPION:
+                $('#content').val(opt.content);
+                $('#description').attr('checked', true);
+                $('#label').attr('checked', false);
+                break;
+            case config.TYPE_LABEL:
+                $('#content').val(opt.content);
+                $('#description').attr('checked', false);
+                $('#label').attr("checked", true);
+                break;
+        }
+    });
+
+    // 확인 - 설명문 / 라벨 전송
+    $('#btnConfirm').on('click', function () {
+        var type = $("input:radio[name ='type']:checked").val();
+        var content = $('#content').val();
+        ipcRenderer.send(req.setDescription, {
+            type: type,
+            content: content
+        });
+
+        window.close();
+    });
+
+    // 닫기 - 창 닫기
+    $('#cancel').on('click', function () {
+        window.close();
+    });
+
+    // ESC 키 - 창 닫기
+    window.onkeydown = function (event) {
+        if (event.key == 'Escape') {
+            window.close();
+        }
+    }
+
+    // $('#content').val('샘플 예제입니다. \n 오류 메세지, 경고 메시지, 기타 메시지 정보를 출력합니다. \n 확인 해 주세요. \n * ' + content);
+</script>
+
+</html>

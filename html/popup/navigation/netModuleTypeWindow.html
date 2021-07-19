@@ -1,0 +1,165 @@
+<html>
+
+<head>
+    <script>window.$ = window.jQuery = require('jquery');</script>
+    <link rel="stylesheet" href="../../../resource/css/basic.css">
+    <link rel="stylesheet" href="../../../resource/css/popup/layout.css">
+
+</head>
+
+<body>
+    <div class="window-layout">
+        <div class="net-module-type-layout">
+            <div class="label">기본 동작 설정</div>
+            <div class="box">
+                <table>
+                    <colgroup>
+                        <col width="30%">
+                        <col width="5px">
+                        <col />
+                    </colgroup>
+                    <tbody>
+                        <tr>
+                            <td><span>베이스 :</span></td>
+                            <td></td>
+                            <td>
+                                <select id="baseNumber"></select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><span>슬롯 :</span></td>
+                            <td></td>
+                            <td>
+                                <select id="slotNumber"></select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><span>모듈 종류 :</span></td>
+                            <td></td>
+                            <td>
+                                <select id="netModSelect"></select>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="button-layout">
+            <button id="btnConfirm">확인</button>
+            <button id="cancel">취소</button>
+        </div>
+
+        <!-- plc Name 값 -->
+        <div>
+            <input type="hidden" id="plcName" value="">
+            <input type="hidden" id="netName" value="">
+        </div>
+    </div>
+</body>
+
+<script type="text/javascript">
+
+    const rootPath = __dirname + '/../../../..';
+    const resourcePath = rootPath + '/src/resource';
+    const rendererPath = resourcePath + '/js/renderer';
+    const definePath = resourcePath + '/js/define';
+    const utilPath = resourcePath + '/js/util';
+
+    const uconsole = require(utilPath + '/utilConsole');
+
+    const req = require(definePath + '/req')
+
+    const { alertWindow } = require(utilPath + '/utilAlert');
+
+    const { ipcRenderer } = require('electron');
+
+    const product = require(definePath + '/product');
+
+    // 최대 베이스 번호 개수
+    var maxBaseNum = 1;
+
+    // 최대 슬롯 번호 개수
+    var maxSlotNum = 10;
+
+    var baseStructures = [];
+
+    // 모듈 추가 정보 수신
+    ipcRenderer.on(req.toNetModuleType, function (event, plcName, plcMod, netName, baseStructures_parm) {
+
+        $('#plcName').val(plcName);
+        $('#netName').val(netName);
+
+        // 네트워크 모듈 종류
+        var netMods = product.NET_MODS();
+
+        for (var i in netMods) {
+            $('#netModSelect').append('<option value="' + netMods[i] + '">' + netMods[i] + '</option>');
+        }
+
+        baseStructures = baseStructures_parm;
+
+        // 베이스 초기화
+        $('#baseNumber').trigger('change');
+
+    });
+
+    // 베이스 슬롯 변경 이벤트 
+    $('#baseNumber').on('change', function () {
+
+        // 슬롯 번호 초기화
+        $('#slotNumber').children().remove();
+
+        var baseNum = $(this).val().trim();
+
+        // 1. 네트워크 모듈에 해당 하는 베이스 번호가 있다면 베이스 번호의 슬롯 번호는 제외 하고 추가
+        for (var i in baseStructures) {
+            if (baseStructures[i].baseNum == baseNum) {
+                for (var j = 0; j < maxSlotNum; j++) {
+                    if ($.inArray(String(j), baseStructures[i].plcSlots) == -1) {
+                        $('#slotNumber').append('<option value="' + j + '">' + j + '</option>');
+                    }
+                }
+                return;
+            }
+        }
+
+        // 2. 네트워크 모듈에 해당 하는 베이스 번호가 없다면 모든 슬롯 번호 추가
+        for (var j = 0; j < maxSlotNum; j++) {
+            $('#slotNumber').append('<option value="' + j + '">' + j + '</option>');
+        }
+    });
+
+    // 확인 
+    $('#btnConfirm').on('click', function () {
+        ipcRenderer.send(req.setNetMod, $('#baseNumber').val(), $('#slotNumber').val(), $('#netModSelect').val(), $('#plcName').val(), $('#netName').val());
+        window.close();
+    });
+
+    // 취소
+    $('#cancel').on('click', function () {
+        window.close();
+    });
+
+    // ESC 키 - 창 닫기
+    window.onkeydown = function (event) {
+        if (event.key == 'Escape') {
+            window.close();
+        }
+    }
+
+    // 초기 베이스 번호 추가
+    for ( var i=0; i<maxBaseNum; i++) {
+        $('#baseNumber').append('<option value="' + i + '">' + i + '</option>');
+    }
+
+    // html 내부 블럭 선택 방지
+    $('body').bind("selectstart", function (e) {
+        return false;
+    });
+
+    // TODO :
+
+</script>
+
+</html>

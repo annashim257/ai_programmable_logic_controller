@@ -1,0 +1,22 @@
+<html>
+
+<head>
+    <script>window.$ = window.jQuery = require('jquery');</script>
+</head>
+
+<body>
+    <div>
+
+    </div>
+</body>
+
+<script type="text/javascript">
+
+    // html 내부 블럭 선택 방지
+    $('body').bind("selectstart", function (e) {
+        return false;
+    });
+
+</script>
+
+</html>

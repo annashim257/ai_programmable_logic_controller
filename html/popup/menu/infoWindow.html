@@ -1,0 +1,57 @@
+<html>
+
+<head>
+    <script>window.$ = window.jQuery = require('jquery');</script>
+    <link rel="stylesheet" href="../../../resource/css/basic.css">
+    <link rel="stylesheet" href="../../../resource/css/popup/layout.css">
+</head>
+
+<body>
+    <div class="window-layout">
+        <div class="info-layout">
+            <h1>VERSION 1.0.0</h1>
+            <p id="content"></p>
+            <button id="btnConfirm">닫기</button>
+        </div>
+    </div>
+</body>
+
+<script type="text/javascript">
+
+    const rootPath = __dirname + '/../../../..';
+    const resourcePath = rootPath + '/src/resource';
+    const rendererPath = resourcePath + '/js/renderer';
+    const utilPath = resourcePath + '/js/util';
+
+    const uconsole = require(utilPath + '/utilConsole');
+    const uFile = require(utilPath + '/utilFile');
+
+    const { ipcRenderer } = require('electron');
+
+    var initialize = function () {
+        var content = uFile.readSync(rootPath + '/license/license.html');
+        $('#content').html(content);
+    }
+
+    // 닫기 - 창 닫기
+    $('#btnConfirm').on('click', function () {
+        window.close();
+    });
+
+    // ESC 키 - 창 닫기
+    window.onkeydown = function (event) {
+        if (event.key == 'Escape') {
+            window.close();
+        }
+    }
+
+    // html 내부 블럭 선택 방지
+    $('body').bind("selectstart", function (event) {
+        return false;
+    });
+
+    initialize();
+
+</script>
+
+</html>

@@ -1,0 +1,430 @@
+<html>
+
+<head>
+    <script>window.$ = window.jQuery = require('jquery');</script>
+
+    <link rel="stylesheet" href="../../../resource/css/basic.css">
+    <link rel="stylesheet" href="../../../resource/css/popup/layout.css">
+
+    <style type="text/css">
+        .highlighted {
+            background: #3399ff;
+        }
+
+        .nonhighlighted {
+            background: none;
+        }
+    </style>
+
+</head>
+
+<body>
+    <div class="window-layout">
+        <div class="net-module-layout">
+            <div class="box">
+                <table>
+                    <colgroup>
+                        <col width="20%">
+                        <col width="30px">
+                        <col />
+                    </colgroup>
+                    <tbody>
+                        <tr>
+                            <td>
+                                <span class="label">PLC 목록</span>
+                            </td>
+                            <td></td>
+                            <td>
+                                <input type="hidden" id="networkName" value="">
+                                <select id="plcNameSelect">
+                                    <option>선택</option>
+                                </select>
+                            </td>
+                            <td></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+            </div>
+        </div>
+        <div class="net-module-table-layout">
+            <div class="box">
+                <span class="label">통신 모듈</span>
+                <div class="button-layout">
+                    <button id="addModule" disabled>모듈 추가</button>
+                    <button id="removeModule" disabled>모듈 삭제</button>
+                </div>
+
+                <div class="table-thead">
+                    <table>
+                        <colgroup>
+                            <col width="50px" />
+                            <col width="60px" />
+                            <col width="10%" />
+                            <col width="35%" />
+                            <col />
+                        </colgroup>
+                        <thead>
+                            <th colspan="5">
+                                <table class="subjectTable">
+                                    <colgroup>
+                                        <col width="50px">
+                                        <col width="60px">
+                                        <col width="10%">
+                                        <col width="35%">
+                                        <col />
+                                    </colgroup>
+                                    <thead>
+                                        <th>번호</th>
+                                        <th>베이스</th>
+                                        <th>슬롯</th>
+                                        <th>모듈</th>
+                                        <th>사용중인 네트워크</th>
+                                    </thead>
+                                </table>
+                            </th>
+                        </thead>
+                    </table>
+                </div>
+
+                <div class="table-body">
+                    <table>
+                        <colgroup>
+                            <col width="50px">
+                            <col width="60px">
+                            <col width="10%">
+                            <col width="35%">
+                            <col />
+                        </colgroup>
+                        <tbody id="moduleTable"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="button-layout">
+            <button id="btnConfirm">확인</button>
+        </div>
+
+    </div>
+</body>
+
+<script type="text/javascript">
+
+    const rootPath = __dirname + '/../../../..';
+    const resourcePath = rootPath + '/src/resource';
+    const rendererPath = resourcePath + '/js/renderer';
+    const definePath = resourcePath + '/js/define';
+    const utilPath = resourcePath + '/js/util';
+
+    const uconsole = require(utilPath + '/utilConsole');
+    const req = require(definePath + '/req')
+    const { alertWindow } = require(utilPath + '/utilAlert');
+    const { ipcRenderer } = require('electron');
+
+    var modStructures = [];
+
+    // 네트워크 모듈 초기화 ( 네비게이션으로 부터 초기화 값 수신 )
+    ipcRenderer.on(req.initNetModule, function (event, plces, netModsByString, networkName) {
+
+        $('#networkName').val(networkName);
+
+        var i = 0;
+        for (i in plces) {
+            $('#plcNameSelect').append('<option value="' + plces[i].plcMod + '">' + plces[i].plcName + '</option>');
+        }
+
+        var isInclude = false;
+
+        for (i in netModsByString) {
+
+            netModsByString[i] = netModsByString[i].replace("]", "");
+            var bracketSplit = netModsByString[i].split('[');
+            var plcName = bracketSplit[0];
+            var spaceSplit = bracketSplit[1].split(" "); // base slot netMod 
+
+            if (i == 0) {
+                var modStructure = {
+                    plcName: "",
+                    plcMod: "",
+                    plcBases: [],
+                    plcSlots: [],
+                    netMods: []
+                }
+
+                modStructure.plcName = plcName;
+                modStructure.plcMod = spaceSplit[2];
+                modStructure.plcBases.push(spaceSplit[0].replace("B", ""));   // base
+                modStructure.plcSlots.push(spaceSplit[1].replace("S", ""));   // slot
+                modStructure.netMods.push(spaceSplit[2]); //  네트워크 모듈    
+
+                modStructures.push(modStructure);
+            } else {
+                for (var j in modStructures) {
+                    if (modStructures[j].plcName.trim() == plcName.trim()) {
+                        modStructures[j].plcBases.push(spaceSplit[0].replace("B", ""));   // base
+                        modStructures[j].plcSlots.push(spaceSplit[1].replace("S", ""));   // slot
+                        modStructures[j].netMods.push(spaceSplit[2]); //  네트워크 모듈    
+
+                        isInclude = true;
+                    }
+                }
+
+                if (!isInclude) {
+                    var modStructure = {
+                        plcName: "",
+                        plcMod: "",
+                        plcBases: [],
+                        plcSlots: [],
+                        netMods: []
+                    }
+
+                    modStructure.plcName = plcName;
+                    modStructure.plcMod = spaceSplit[2];
+                    modStructure.plcBases.push(spaceSplit[0].replace("B", ""));   // base
+                    modStructure.plcSlots.push(spaceSplit[1].replace("S", ""));   // slot
+                    modStructure.netMods.push(spaceSplit[2]); //  네트워크 모듈    
+
+                    modStructures.push(modStructure);
+                }
+
+                isInclude = false;
+
+            }
+
+        }
+
+    });
+
+    // 네트워크 모듈 추가 ( 네트워크 모듈 타입으로 부터 네비게이션을 통해 통신 모듈 타입 값 수신 )
+    ipcRenderer.on(req.setNetMod, function (event, base, slot, netMod, plcName, networkName) {
+
+        if (plcName.trim().length == 0) {
+            alertWindow( "PLC 이름이 설정 되지 않았습니다.");
+            return;
+        }
+
+        if (netMod.trim().length == 0) {
+            alertWindow( "통신 모듈이 설정 되지 않았습니다.");
+            return;
+        }
+
+        for (var i in modStructures) {
+            
+            if ($('#plcNameSelect').find('option:checked').text().trim() == modStructures[i].plcName.trim()) {
+                modStructures[i].plcBases.push(base);
+                modStructures[i].plcSlots.push(slot);
+                modStructures[i].netMods.push(netMod);
+            }
+        }
+        addTr(base, slot, netMod, networkName);
+    });
+
+
+    // 통신 모듈 테이블 열 추가 
+    var addTr = function (base, slot, netMod, networkName) {
+        var index = $('#moduleTable').children('tr').length + 1;
+
+        if (index > 10) {
+            alertWindow( "슬롯은 10개 이상 사용 할 수 없습니다. ");
+            return;
+        }
+
+        var html = "";
+        html += '<tr>';
+        html += '<td>' + index + '</td>';
+        html += '<td>' + base + '</td>';
+        html += '<td>' + slot + '</td>';
+        html += '<td>' + netMod + '</td>';
+        html += '<td>' + networkName + '</td>';
+        html += '</tr>';
+
+        $('#moduleTable').append(html);
+
+        $('#moduleTable tr td').on('click', function () {
+            var $tr = $(this).parent();
+
+            $tr.parent().children('tr').removeClass('highlighted');
+            $tr.parent().children('tr').children('td').css({
+                'background': '#424242'
+            });
+
+            $tr.addClass('highlighted');
+            $tr.children('td').css({
+                'background': '#3399ff'
+            });
+        });
+    }
+
+    // 통신 모듈 테이블 열 삭제 
+    var removeTr = function (index) {
+        $('#moduleTable').find('tr:eq(' + index + ')').remove();
+    }
+
+    // 통신 모듈 테이블 열 모두 삭제
+    var removeAllTr = function () {
+        $('#moduleTable tr').each(function () {
+            $(this).remove();
+        });
+    }
+
+    // PLC 목록 변경 이벤트 ( 통신 모듈 테이블 초기화 )
+    $('#plcNameSelect').on('change', function () {
+        var index = $('#plcNameSelect option').index($('#plcNameSelect option:selected'));
+
+        if (index < 1) {
+            removeAllTr();
+            $('#addModule').attr('disabled', true);
+            $('#removeModule').attr('disabled', true);
+            return;
+        }
+
+        $('#addModule').attr('disabled', false);
+        $('#removeModule').attr('disabled', false);
+
+        // 통신 모듈 테이블 열 모두 삭제
+        removeAllTr();
+
+        for (var i in modStructures) {
+            if ($(this).find('option:checked').text().trim() == modStructures[i].plcName) {
+                for (var j in modStructures[i].plcSlots) {
+                    addTr(modStructures[i].plcBases[j], modStructures[i].plcSlots[j], modStructures[i].netMods[j], $('#networkName').val());
+                }
+            }
+        }
+
+        // TODO 
+        // : 추가 모듈 설정 
+        // : 통신 모듈의 정책에 따라 변경이 될 수 있음.
+
+        // 1. 추가 정보 가져오기 
+
+        // 2. 추가 모듈 설정하기
+
+    })
+
+    // 모듈 추가
+    $('#addModule').on('click', function () {
+
+        var index = $('#plcNameSelect option').index($('#plcNameSelect option:selected'));
+
+        if (index < 1) {
+            alertWindow( 'PLC 이름을 선택하세요.');
+            return;
+        }
+
+        // TODO
+        // : 네트워크 모듈이 추가 되는 경우 아래와 같이 작업 진행
+        // : 현재는 네트워크 디바이스가 없으므로 isNetModuleType 값은 false로 진행
+
+        var isNetModuleType = true;
+
+        if (isNetModuleType) {
+
+            var plcName = $('#plcNameSelect option:selected').text();
+            var networkName = $('#networkName').val();
+            var plcMod = $('#plcNameSelect').val();
+
+            // var index = $("#plcNameSelect option").index($("#plcNameSelect option:selected"));
+
+            var baseStructures = [];
+            var isInclude = false;
+
+            $('#moduleTable tr').each(function () {
+
+                var index = $(this).index();
+                var baseNum = $(this).children("td:eq(1)").text().trim();
+                var slotNum = $(this).children("td:eq(2)").text().trim();
+
+                if (index == 0) {
+                    var baseStructure = {
+                        baseNum: "",
+                        plcSlots: []
+                    };
+                    baseStructure.baseNum = baseNum;
+                    baseStructure.plcSlots.push(slotNum);
+                    baseStructures.push(baseStructure);
+
+                } else {
+                    for (var i in baseStructures) {
+                        if (baseStructures[i].baseNum == baseNum) {
+                            baseStructures[i].plcSlots.push(slotNum);
+                            isInclude = true;
+                        }
+                    }
+
+                    if (!isInclude) {
+                        var baseStructure = {
+                            baseNum: "",
+                            plcSlots: []
+                        };
+                        baseStructure.baseNum = baseNum;
+                        baseStructure.plcSlots.push(slotNum);
+                        baseStructures.push(baseStructure);
+                    }
+
+                    isInclude = false;
+                }
+            });
+
+            ipcRenderer.send(req.netModTypeWindowToMain, plcName, plcMod, networkName, baseStructures);
+
+        } else {
+            alertWindow( '네트워크 모듈이 존재 하지 않습니다.');
+        }
+
+    });
+
+    // 모듈 삭제
+    $('#removeModule').on('click', function () {
+
+        var $tr = $('#moduleTable tr.highlighted');
+
+        if (typeof $tr === 'undefined') {
+            return;
+        }
+
+        var index = Number( $tr.children('td:eq(0)').text().trim() ) ;
+
+        if (index == 1) {
+            alertWindow( '삭제 할 수 없습니다.');
+            return;
+        }
+
+        var base = $tr.children('td:eq(1)').text().trim();
+        var slot = $tr.children('td:eq(2)').text().trim();
+        var netMod = $tr.children('td:eq(3)').text().trim();
+        var plcName = $('#plcNameSelect option:checked').text().trim();
+        var networkName = $('#networkName').val().trim();
+
+        for (var i in modStructures) {
+            if ($('#plcNameSelect').find('option:checked').text().trim() == modStructures[i].plcName) {
+                modStructures[i].plcBases.splice(index, 1);
+                modStructures[i].plcSlots.splice(index, 1);
+                modStructures[i].netMods.splice(index, 1);
+            }
+        }
+
+        ipcRenderer.send(req.removeNetMod, base, slot, netMod, plcName, networkName);
+
+        $tr.remove();
+    });
+
+    $('#moduleTable').on('click', function () {
+        // uconsole.log('index  =' + $(this).index);
+    })
+
+    // 확인 
+    $('#btnConfirm').on('click', function () {
+        window.close();
+    });
+
+    // html 내부 블럭 선택 방지
+    $('body').bind("selectstart", function (e) {
+        return false;
+    });
+
+    // TODO
+
+</script>
+
+</html>

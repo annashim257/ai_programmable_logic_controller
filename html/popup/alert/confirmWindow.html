@@ -1,0 +1,62 @@
+<html>
+
+<head>
+    <script>window.$ = window.jQuery = require('jquery');</script>
+    <link rel="stylesheet" href="../../../resource/css/basic.css">
+    <link rel="stylesheet" href="../../../resource/css/popup/layout.css">
+</head>
+
+<body>
+    <div class="window-layout">
+        <div class="alert-layout">
+            <textarea id="message" disabled></textarea>
+        </div>
+
+        <div class="button-layout">
+            <button id="btnConfirm">확인</button>
+            <button id="cancel">취소</button>
+        </div>
+    </div>
+</body>
+
+<script type="text/javascript">
+
+    const rootPath = __dirname + '/../../../..';
+    const resourcePath = rootPath + '/src/resource';
+    const definePath = resourcePath + '/js/define';
+    const rendererPath = resourcePath + '/js/renderer';
+    const utilPath = resourcePath + '/js/util';
+
+    const req = require(definePath + '/req')
+
+    const uconsole = require(utilPath + '/utilConsole');
+
+    const { ipcRenderer } = require('electron');
+
+    ipcRenderer.on(req.confirmWnidow, function(event, message) {
+        if ( message.trim().length > 0) {
+            $('#message').val(message);
+        }
+    });
+
+    // 확인 - 결과 전달
+    $('#btnConfirm').on('click', function () {
+        ipcRenderer.send(req.confirmWnidow, true);
+        window.close();
+    });
+
+    // 취소 - 창 닫기
+    $('#btnConfirm').on('click', function () {
+        ipcRenderer.send(req.confirmWnidow, false);
+        window.close();
+    });
+
+    // ESC 키 - 창 닫기
+    window.onkeydown = function (event) {
+        if (event.key == 'Escape') {
+            window.close();
+        }
+    }
+</script>
+
+</html>

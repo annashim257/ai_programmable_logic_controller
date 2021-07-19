@@ -1,0 +1,197 @@
+<html>
+
+<head>
+    <script>window.$ = window.jQuery = require('jquery');</script>
+
+    <link rel="stylesheet" href="../../../resource/css/basic.css">
+    <link rel="stylesheet" href="../../../resource/css/popup/layout.css">
+
+</head>
+
+<body>
+    <div class="window-layout">
+        <div class="task-layout">
+            <table>
+                <colgroup>
+                    <col width="25%">
+                    <col width="5px">
+                    <col />
+                </colgroup>
+                <tbody>
+                    <tr>
+                        <td>태스크 이름 :</td>
+                        <td></td>
+                        <td><input type="text" id="taskName"></td>
+                    </tr>
+                    <tr>
+                        <td>태스크 번호 :</td>
+                        <td></td>
+                        <td><input type="text" id="num"></td>
+                    </tr>
+                    <tr>
+                        <td>우선 순위 :</td>
+                        <td></td>
+                        <td>
+                            <select id="priority">
+                                <option value="2">2</option>
+                                <option value="3">3</option>
+                                <option value="4">4</option>
+                                <option value="5">5</option>
+                                <option value="6">6</option>
+                                <option value="7">7</option>
+                            </select>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="separate"></div>
+            
+            <div class="box">
+                <div class="label">운전 조건</div>
+                <table>
+                    <colgroup>
+                        <col width="10px">
+                        <col width="70px">
+                        <col />
+                    </colgroup>
+                    <tbody>
+                        <tr>
+                            <td><input type="radio" id="initiative" name="condition" checked></td>
+                            <td><label for="initiative">초기화</label></td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td><input type="radio" id="intervalTime" name="condition"></td>
+                            <td><label for="intervalTime">정주기</label></td>
+                            <td><input type="text" id="interval" val="10" disabled> ms</td>
+                        </tr>
+                        <tr></tr>
+                    </tbody>
+                </table>
+            </div>
+
+        </div>
+
+        <div class="button-layout">
+            <button id="btnConfirm">확인</button>
+            <button id="cancel">취소</button>
+        </div>
+
+    </div>
+</body>
+
+<script type="text/javascript">
+
+    const rootPath = __dirname + '/../../../..';
+    const resourcePath = rootPath + '/src/resource';
+    const rendererPath = resourcePath + '/js/renderer';
+    const definePath = resourcePath + '/js/define';
+    const utilPath = resourcePath + '/js/util';
+
+    const { alertWindow } = require(utilPath + '/utilAlert');
+    const uconsole = require(utilPath + '/utilConsole');
+
+    const req = require(definePath + '/req')
+
+    const { ipcRenderer } = require('electron');
+
+    var plcName;
+
+    // 태스크 이름 받기
+    ipcRenderer.on(req.getTaskName, (event, opt) => {
+        plcName = opt.plcName;
+
+        if (opt.taskName.length > 0) {
+            $('#taskName').val(opt.taskName);
+            $('#num').val(opt.num);
+            $('#priority').val(opt.priority);
+
+            if (Number(opt.interval) > 0) {
+                $('#interval').val(opt.interval);
+                $('#interval').attr('disabled', false);
+                $('#intervalTime').attr('checked', true);
+                $('#initiative').attr('checked', false);
+            } else {
+                $('#interval').attr('disabled', true);
+                $('#intervalTime').attr('checked', false);
+                $('#initiative').attr('checked', true);
+            }
+        }
+
+    });
+
+    $("input:radio[name='condition']").on('click', function () {
+        switch ($(this).attr('id')) {
+            case "initiative":
+                $('#interval').attr('disabled', true);
+                break;
+            case "intervalTime":
+                $('#interval').attr('disabled', false);
+                break;
+        }
+    });
+
+    // 확인 
+    $('#btnConfirm').on('click', function () {
+
+        var taskName = $('#taskName').val();
+
+        if (taskName.trim().length === 0) {
+            alertWindow('태스크 이름을 입력하세요.');
+            return;
+        }
+
+        var num = $('#num').val();
+
+        if (num.trim().length === 0) {
+            alertWindow('태스크 번호를 입력하세요.');
+            return;
+        }
+
+        if (num === '1') {
+            alertWindow('태스크 번호는 1 이상 값을 입력하세요.');
+            return;
+        }
+
+        var priority = $('#priority').val();
+
+        var conditionID = $(":input:radio[name=condition]:checked").attr('id');
+
+        var interval;
+
+        switch (conditionID) {
+            case 'intervalTime':
+                interval = $('#interval').val().trim() === "" ? 10 : $('#interval').val().trim();
+                break;
+            case 'initiative':
+            default:
+                interval = 0;
+                break;
+        }
+
+        ipcRenderer.send(req.setTaskName, {
+            plcName: plcName,
+            taskName: taskName,
+            num: num,
+            priority: priority,
+            interval: interval
+        });
+
+        window.close();
+    });
+
+    // 취소
+    $('#cancel').on('click', function () {
+        window.close();
+    });
+
+    // html 내부 블럭 선택 방지
+    $('body').bind("selectstart", function (e) {
+        return false;
+    });
+
+
+</script>
+
+</html>

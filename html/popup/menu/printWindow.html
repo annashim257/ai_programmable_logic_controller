@@ -1,0 +1,146 @@
+<html>
+
+<head>
+    <script>window.$ = window.jQuery = require('jquery');</script>
+
+    <link rel="stylesheet" href="../../../resource/css/basic.css">
+    <link rel="stylesheet" href="../../../resource/css/popup/layout.css">
+
+</head>
+
+<body>
+    <div class="window-layout">
+        <div class="print-layout">
+            <div class="label">프로그램 선택</div>
+            <table>
+                <colgroup>
+                    <col width="25%">
+                    <col />
+                </colgroup>
+                <tbody>
+                    <tr>
+                        <td><span>프로그램 언어 :</span></td>
+                        <td>
+                            <select>
+                                <option>활성</option>
+                                <option>비활성</option>
+                            </select>
+                        </td>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="separate"></div>
+
+        <div class="print-detail-layout">
+            
+            <div class="label">상세 옵션</div>
+
+            <table>
+                <colgroup>
+                    <col width="25%">
+                    <col />
+                </colgroup>
+                <tbody>
+                    <tr>
+                        <td>표시 접점수 :</td>
+                        <td>
+                            <select id="contactNum">
+                                <option value="1">1 개</option>
+                                <option value="2">2 개</option>
+                                <option value="3">3 개</option>
+                                <option value="4">4 개</option>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>인쇄 범위 : </td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td></td>
+                        <td style="text-align: left;">
+                            <input type="checkbox" id="all"><label for="all">프로그램 전체</label>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td></td>
+                        <td style="text-align: left;">
+                            <input type="checkbox" id="range"><label for="range">범위 인쇄</label>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td></td>
+                        <td>
+                            <table>
+                                <colgroup>
+                                    <col width="80px">
+                                    <col width="90px">
+                                    <col width="20px">
+                                    <col width="50px">
+                                    <col />
+                                    <col width="20px">
+                                </colgroup>
+                                <tbody>
+                                    <tr>
+                                        <td>시작 :</td>
+                                        <td><input type="text"></td>
+                                        <td>~</td>
+                                        <td>끝 :</td>
+                                        <td><input type="text"></td>
+                                        <td></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td></td>
+                        <td>
+                            <button id="printSet">프린트 설정</button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="button-layout">
+            <button id="btnConfirm">인쇄</button>
+            <button id="cancel">취소</button>
+        </div>
+    </div>
+</body>
+
+<script type="text/javascript">
+
+    const rootPath = __dirname + '/../../../..';
+    const resourcePath = rootPath + '/src/resource';
+    const utilPath = resourcePath + '/js/util';
+
+    const uconsole = require(utilPath + '/utilConsole');
+
+    // 확인 
+    $('#btnConfirm').on('click', function () {
+
+    });
+
+    // 취소
+    $('#cancel').on('click', function () {
+        window.close();
+    });
+
+    // ESC 키 - 창 닫기
+    window.onkeydown = function (event) {
+        if (event.key == 'Escape') {
+            window.close();
+        }
+    }
+
+    // html 내부 블럭 선택 방지
+    $('body').bind("selectstart", function (e) {
+        return false;
+    });
+
+</script>
+
+</html>

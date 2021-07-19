@@ -1,0 +1,202 @@
+<html>
+
+<head>
+    <script>window.$ = window.jQuery = require('jquery');</script>
+
+    <link rel="stylesheet" href="../../../resource/css/basic.css">
+    <link rel="stylesheet" href="../../../resource/css/popup/layout.css">
+
+</head>
+
+<body>
+    <div class="window-layout">
+        <div class="function-layout">
+            <table>
+                <colgroup>
+                    <col width="20%">
+                    <col width="5px">
+                    <col />
+                </colgroup>
+                <tbody>
+                    <tr>
+                        <td><span> 이름 : </span></td>
+                        <td></td>
+                        <td><input type="text" id="funcName"></td>
+                    </tr>
+                    <tr>
+                        <td><span> 분류 : </span></td>
+                        <td></td>
+                        <td>
+                            <select id="funcType" disabled>
+                                <option value="func">펑션</option>
+                                <option value="funcBlock">펑션 블럭</option>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><span>프로그램 언어 : </span></td>
+                        <td></td>
+                        <td>
+                            <select id="progLanguage">
+                                <option value="LD">LD</option>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><span>리턴 타입 : </span></td>
+                        <td></td>
+                        <td>
+                            <select id="returnType">
+                                <option value="BOOL">BOOL</option>
+                                <option value="INT">INT</option>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td></td>
+                        <td></td>
+                        <td valign="center">
+                            <input type="checkbox" id="isAi">
+                            <label for="isAi">AI 사용</label>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><span> AI 종류 : </span></td>
+                        <td></td>
+                        <td>
+                            <select id="aiType" disabled>
+                                <option>선택</option>
+                                <option>MODEL100-H1</option>
+                                <option>MODEL100-H2</option>
+                                <option>MODEL100-H3</option>
+                                <option>MODEL100-H4</option>
+                                <option>MODEL100-H5</option>
+                                <option>MODEL100-H6</option>
+                                <option>MODEL100-H7</option>
+                                <option>MODEL100-H8</option>
+                                <option>MODEL100-H9</option>
+                                <option>MODEL100-H10</option>
+                            </select>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td></td>
+                        <td></td>
+                        <td valign="center">
+                            <input type="checkbox" id="isEnEno">
+                            <label for="isEnEno">EN/ENO 사용</label>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td valign="top"><div class="last"><span>설명 :</span></div></td>
+                        <td></td>
+                        <td>
+                            <textarea id="discription"></textarea>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+
+        </div>
+
+        <div class="button-layout">
+            <button id="btnConfirm">확인</button>
+            <button id="cancel">취소</button>
+        </div>
+
+    </div>
+</body>
+
+<script type="text/javascript">
+
+    const rootPath = __dirname + '/../../../..';
+    const resourcePath = rootPath + '/src/resource';
+    const rendererPath = resourcePath + '/js/renderer';
+    const definePath = resourcePath + '/js/define';
+    const utilPath = resourcePath + '/js/util';
+
+    const uconsole = require(utilPath + '/utilConsole');
+    const req = require(definePath + '/req')
+    const { ipcRenderer } = require('electron');
+
+    var plcName;
+
+    // 데이터 설정하기
+    var setData = function (opt) {
+        $('#funcName').val(opt.funcName);
+        $('#funcType').val(opt.funcType);
+        $('#progLanguage').val(opt.progLanguage);
+        $('#returnType').val(opt.returnType);
+        $('#isAi').prop("checked", typeof opt.isAi == 'undefined' ? false : opt.isAi);
+        $('#aiType').val(opt.aiType);
+        $('#isEnEno').prop("checked", typeof opt.isEnEno == "undefined" ? false : opt.isEnEno);
+        $('#discription').val(opt.discription);
+    }
+
+    // 데이터 가져오기 
+    var getData = function () {
+        return {
+            funcName: $('#funcName').val(),
+            funcType: $('#funcType option:selected').val(),
+            progLanguage: $('#progLanguage option:selected').val(),
+            returnType: $('#returnType option:selected').val(),
+            isAi: $('#isAi').is(":checked"),
+            aiType: $('#aiType option:selected').val(),
+            isEnEno: $('#isEnEno').is(":checked"),
+            discription: $('#discription').val()
+        }
+    }
+
+    // 함수 이름 받기
+    ipcRenderer.on(req.getFunc, (event, opt) => {
+
+        plcName = opt.plcName;
+        
+        if (opt.funcName.length > 0) {
+            setData(opt);
+        }
+    });
+
+    // AI 모듈 사용 여부 
+    $('#isAi').on('change', function () {
+        if ($(this).is(":checked")) {
+            $('#aiType').prop('disabled', false);
+        } else {
+            $('#aiType').prop('disabled', true);
+        }
+    });
+
+    // 확인 
+    $('#btnConfirm').on('click', function () {
+        var data = getData();
+
+        ipcRenderer.send(req.setFunc, {
+            plcName: plcName,
+            funcType: data.funcType,
+            funcName: data.funcName,
+            progLanguage: data.progLanguage,
+            returnType: data.returnType,
+            isAi: data.isAi,
+            aiType: data.aiType,
+            isEnEno: data.isEnEno
+        });
+
+        window.close();
+    });
+
+    // 취소
+    $('#cancel').on('click', function () {
+        window.close();
+    });
+
+    // html 내부 블럭 선택 방지
+    $('body').bind("selectstart", function (e) {
+        return false;
+    });
+
+    // TODO
+
+</script>
+
+</html>

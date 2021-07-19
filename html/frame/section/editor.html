@@ -1,0 +1,222 @@
+<html>
+
+<head>
+    <link rel="stylesheet" href="node_modules/dragula/dist/dragula.css">
+</head>
+
+<body>
+    <div class="removeEtabs"></div>
+    <div class="modifyEtabsTitle"></div>
+    <div class="modifyEtabsTitleByPlc"></div>
+
+    <div class="editor">
+        <div class="etabs-tabgroup">
+            <div class="etabs-tabs"></div>
+            <div class="etabs-buttons"></div>
+
+        </div>
+        <div class="etabs-views"></div>
+    </div>
+
+</body>
+
+<script type="text/javascript">
+
+    const { addTab, removeTab, removeAll, getActiveTab, modifyTabTitle, modifyTabTitleByPlc } = require(path.join(rendererPath, 'editorTab'));
+
+    var defualt_org = 'src/resource/image/default_org.png'
+
+    // 활성화된 탭의 클래스 이름 가져오기
+    var getClassName = function () {
+
+        var tab = getActiveTab();
+
+        if (tab == null) {
+            console.error("활성화된 탭이 존재 하지 않습니다.");
+            return tab;
+        }
+
+        return tab.webview.getAttribute('class').replace("etabs-view", "").replace("visible", "").trim();
+    }
+
+    // 문자열 검색 Event 
+    var eventFindStr = function () {
+        var className = getClassName();
+
+        if (className == null) {
+            return false;
+        }
+
+        var prefix = className.split("-")[0];
+
+        switch (prefix) {
+            case "variable":
+            case "funcVariable":
+            case "ld":
+                var editor = document.querySelector("." + className);
+                editor.send(req.findStr, "");
+                break;
+            default:
+                break;
+        }
+
+        // if (prefix == "variable" || prefix == "funcVariable") {
+        //     var editor = document.querySelector("." + className);
+        //     editor.send(req.findStr, "");
+        // }
+
+    }
+
+    // 문자열 바꾸기 Event (변수만 해당 - 로컬변수 및 함수 로컬변수 및 시스템 변수)
+    var eventChangeStr = function () {
+        var className = getClassName();
+
+        if (className == null) {
+            return false;
+        }
+
+        var prefix = className.split("-")[0];
+
+        if (prefix == "variable" || prefix == "funcVariable") {
+            var editor = document.querySelector("." + className);
+            editor.send(req.changeStr, "");
+        }
+    }
+
+    // 심볼 Event (LD만 해당)
+    var eventLd = function (req, action) {
+
+        var className = getClassName();
+
+        if (className == null) {
+            return false;
+        }
+
+        var prefix = className.split("-")[0];
+
+        if (prefix != "ld") {
+            return false;
+        }
+
+        var editor = document.querySelector("." + className);
+
+        editor.send(req, action);
+    }
+
+    // 탭 추가 
+    $('.etabs-buttons').on('click', function (event, opt) {
+        addTab(opt);
+        $('.etabs-tab').css("cursor", `url(${defualt_org}), auto`);
+    });
+
+    // 탭 삭제 
+    $('.removeEtabs').on('click', function (event, label) {
+        removeTab(label);
+    });
+
+    // 탭의 title 수정  
+    $('.modifyEtabsTitle').on('click', function (event, label, title) {
+        modifyTabTitle(label, title);
+    });
+
+    // 탭의 Plc 이름에 의한 title 수정 
+    $('.modifyEtabsTitleByPlc').on('click', function (event, oldPlcName, newPlcName) {
+        modifyTabTitleByPlc(oldPlcName, newPlcName);
+    });
+
+    ipcRenderer.on(req.writeProgExample, function (event, opt) {
+        eventLd(req.writeProgExample, opt);
+    });
+
+    // 모든 에디터 Aaciton 이벤트
+    ipcRenderer.on(req.editAll, function (event, action) {
+        eventLd(req.editAll, action);
+    });
+
+    // 단축키의 LD 에디터 Aaciton 이벤트
+    ipcRenderer.on(req.symbol, function (event, opt) {
+        eventLd(req.symbol, opt);
+    });
+
+    // 단축키의 LD 에디터 접점수 증가 이벤트
+    ipcRenderer.on(req.addContactNum, function (event, message) {
+        eventLd(req.addContactNum, message);
+    });
+
+    // 단축키의 LD 에디터 접점수 감소 이벤트
+    ipcRenderer.on(req.removeContactNum, function (event, message) {
+        eventLd(req.removeContactNum, message);
+    });
+
+    // LD 에 설명문 / 레이블 설정
+    ipcRenderer.on(req.setDescription, function (event, opt) {
+        eventLd(req.setDescription, opt);
+    });
+
+    // 메뉴로부터 설명문 팝업창 열기 
+    ipcRenderer.on(req.descriptionFromMenu, function (event, action) {
+        eventLd(req.descriptionFromMenu, action);
+    });
+
+    // LD 에 출력 설명문 설정
+    ipcRenderer.on(req.setOutDescription, function (event, content) {
+        eventLd(req.setOutDescription, content);
+    });
+
+    // 로컬 변수 선택 이벤트
+    ipcRenderer.on(req.variableSelect, function (event, localVarClass) {
+        eventLd(req.variableSelect, localVarClass);
+    });
+
+    // 펑션 변수 선택 이벤트
+    ipcRenderer.on(req.funcVariableSelect, function (event, funcVarClass) {
+        eventLd(req.funcVariableSelect, funcVarClass);
+    });
+
+    // 펑션 변수 선택 이벤트
+    ipcRenderer.on(req.validFunc, function (event, maxNum) {
+        eventLd(req.validFunc, maxNum);
+    });
+
+
+    // 라인 추가 이벤트
+    ipcRenderer.on(req.addLine, function (event, action) {
+        eventLd(req.addLine, action);
+    });
+
+    // 라인 삭제 선택 이벤트
+    ipcRenderer.on(req.removeLine, function (event, action) {
+        eventLd(req.removeLine, action);
+    });
+
+    // 셀 추가 이벤트
+    ipcRenderer.on(req.addCell, function (event, action) {
+        eventLd(req.addCell, action);
+    });
+
+    // 셀 삭제 선택 이벤트
+    ipcRenderer.on(req.removeCell, function (event, action) {
+        eventLd(req.removeCell, action);
+    });
+
+
+    // 문자열 검색 팝업창 띄우기 
+    ipcRenderer.on(req.findStr, function (event, message) {
+        eventFindStr();
+    });
+
+    // 문자열 바꾸기 팝업창 띄우기 
+    ipcRenderer.on(req.changeStr, function (event, message) {
+        eventChangeStr();
+    });
+
+    // 프로젝트 닫기 ( action : 탭 요소 모두 삭제)
+    ipcRenderer.on(req.closeProj, function (event, action) {
+        removeAll();
+    });
+
+    $('.etabs-tabgroup').css("cursor", `url(${defualt_org}), auto`);
+    
+</script>
+
+</html>

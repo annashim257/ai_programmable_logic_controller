@@ -1,0 +1,268 @@
+<html>
+
+<head>
+    <script>window.$ = window.jQuery = require('jquery');</script>
+
+    <!-- <link rel="stylesheet" href="../../../resource/css/basic.css"> -->
+    <link rel="stylesheet" href="../../../resource/css/popup/layout.css">
+    <!-- <link rel="stylesheet" href="../../../resource/css/popup/newProjWindow.css"> -->
+
+</head>
+
+<body>
+    <div class="window-layout">
+        <div class="new-layout">
+            <table>
+                <colgroup>
+                    <col width="120px">
+                    <col width="5px">
+                    <col width="50%">
+                    <col />
+                </colgroup>
+                <tbody>
+                    <tr>
+                        <td><span>프로젝트 이름 : </span></td>
+                        <td></td>
+                        <td><input type="text" id="projName"></td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td><span>파일 경로 : </span></td>
+                        <td></td>
+                        <td><input type="text" id="projPath"></td>
+                        <td><button id="btnProjPath">경로 선택</button></td>
+                    </tr>
+                    <tr>
+                        <td><span>프로그램 이름 : </span></td>
+                        <td></td>
+                        <td><input type="text" id="progName" value="NewProgram0" disabled></td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td><span>CPU 선택 : </span></td>
+                        <td></td>
+                        <td>
+                            <select id="cpuType"></select>
+                        </td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td><span>제품 선택 : </span></td>
+                        <td></td>
+                        <td>
+                            <select id="plcMod"></select>
+                        </td>
+                        <td><button id="btnProductView">제품 보기</button></td>
+                    </tr>
+                    <tr>
+                        <td><span>프로그램 언어 : </span></td>
+                        <td></td>
+                        <td>
+                            <select id="progLanguage">
+                                <option value="ld">LD</option>
+                            </select>
+                        </td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td valign="top"><div class="last"><span>설명 : </span></div></td>
+                        <td></td>
+                        <td colspan="2">
+                            <textarea id="discription"></textarea>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+
+        </div>
+
+        <div class="button-layout">
+            <button id="btnConfirm">확인</button>
+            <button id="btnCancel">취소</button>
+        </div>
+
+    </div>
+</body>
+
+<script type="text/javascript">
+
+    const rootPath = __dirname + '/../../../..';
+    const resourcePath = rootPath + '/src/resource';
+    const rendererPath = resourcePath + '/js/renderer';
+    const definePath = resourcePath + '/js/define';
+    const utilPath = resourcePath + '/js/util';
+
+    const uconsole = require(utilPath + '/utilConsole');
+    const req = require(definePath + '/req');
+    const config = require(definePath + '/config');
+    const uFile = require(utilPath + '/utilFile');
+    const product = require(definePath + '/product');
+
+    const { alertWindow } = require(utilPath + '/utilAlert');
+
+    const { dialog } = require('electron').remote;
+
+    const { ipcRenderer } = require('electron');
+
+    var getData = function () {
+        return {
+            projName: $('#projName').val(),
+            projPath: $('#projPath').val(),
+            progName: $('#progName').val(),
+            cpuType: $('#cpuType').val(),
+            plcMod: $('#plcMod').val(),
+            progLanguage: $('#progLanguage').val(),
+            discription: $('#discription').val()
+        }
+    }
+
+    // 공백이 있나 없나 체크 
+    var checkSpace = function (str) {
+        if (str.search(/\s/) != -1) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    // 특수 문자 체크
+    var checkSpecial = function (str) {
+        var special_pattern = /[(){}`~!@#$%^&*|\\\'\";:\/?]/gi;
+        if (special_pattern.test(str) == true) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    // 경로 체크
+
+    // 확인 
+    $('#btnConfirm').on('click', function () {
+
+        var data = getData();
+
+        if (data.projName.trim().length == 0) {
+            alertWindow("프로젝트 이름을 입력하세요.");
+            return;
+        }
+
+        if ($.isNumeric(data.projName.substring(0, 1))) {
+            alertWindow("프로젝트 이름의 첫 글자는 숫자나 특수 문자로 시작할 수 없습니다.");
+            return;
+        }
+
+        if (checkSpace(data.projName)) {
+            alertWindow("프로젝트 이름에 공백을 사용 할 수 없습니다.");
+            return;
+        }
+
+        if (checkSpecial(data.projName)) {
+            alertWindow("프로젝트 이름에 특수 문자를 사용 할 수 없습니다.");
+            return;
+        }
+
+        if (data.projPath.trim().length == 0) {
+            alertWindow("프로젝트 경로를 선택하세요.");
+            return;
+        }
+
+        if (!uFile.checkPath(data.projPath)) {
+            alertWindow("존재 하지 않는 경로입니다. 파일 경로를 확인하세요.");
+            return;
+        }
+
+        if (data.progName.trim().length == 0) {
+            alertWindow("프로그램 이름을 입력하세요.");
+            return;
+        }
+
+        if (checkSpace(data.progName)) {
+            alertWindow("프로그램 이름에 공백을 사용 할 수 없습니다.");
+            return;
+        }
+
+        if (checkSpecial(data.progName)) {
+            alertWindow("프로그램 이름에 특수 문자를 사용 할 수 없습니다.");
+            return;
+        }
+
+        ipcRenderer.send(req.setNewProj, data.projPath, data.projName, data.progName, data.plcMod, data.cpuType, data.progLanguage);
+
+        window.close();
+
+    });
+
+    // 취소
+    $('#btnCancel').on('click', function () {
+        window.close();
+    });
+
+    // ESC 키 - 창 닫기
+    window.onkeydown = function (event) {
+        switch (event.key) {
+            case 'Escape':
+                window.close();
+                break;
+            case 'Enter':
+                $('#btnConfirm').trigger('click');
+                break;
+        }
+    }
+
+    // 파일 경로 선택
+    $('#btnProjPath').on('click', function () {
+        const options = {
+            title: '프로젝트 경로',
+            properties: ['openDirectory', 'createDirectory']
+        }
+
+        // 방법 1 (비 동기화)
+        dialog.showOpenDialog(options).then(function (result) {
+            $('#projPath').val(result.filePaths[0]);
+        }).then(function (err) {
+            if (typeof err !== 'undefined') {
+                uconsole.log(err);
+            }
+        })
+
+        // 방법 2 ( 동기화 )
+        // var fileName = dialog.showOpenDialogSync(options);
+
+        // if (typeof fileName === 'undefined') {
+        //     return;
+        // }
+
+        // $('#projPath').val(fileName);
+
+    });
+
+
+    // cpu 제품 이름 초기화
+    var cpuNames = product.CPU_NAMES();
+    for (var j = 0; j < cpuNames.length; j++) {
+        $('#cpuType').append('<option value="' + cpuNames[j] + '">' + cpuNames[j] + '</option>');
+    }
+
+    // 제품 이름 초기화
+    var plcMods = product.PLC_MOD_NAMES();
+    for (var j = 0; j < plcMods.length; j++) {
+        $('#plcMod').append('<option value="' + plcMods[j] + '">' + plcMods[j] + '</option>');
+    }
+
+    
+
+    // 제품 보기 (URL or PDF 파일 열기)
+    $('#btnProductView').on('click', function () {
+        // ipcRenderer.send(req.productViewToMain, "");
+        ipcRenderer.send(req.alert, "개발 진행중 입니다.....");
+    });
+
+    // html 내부 블럭 선택 방지
+    $('body').bind("selectstart", function (e) {
+        return false;
+    });
+
+</script>
+
+</html>

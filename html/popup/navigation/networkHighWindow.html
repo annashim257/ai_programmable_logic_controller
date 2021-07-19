@@ -1,0 +1,193 @@
+<html>
+
+<head>
+    <script>window.$ = window.jQuery = require('jquery');</script>
+
+    <link rel="stylesheet" href="../../../resource/css/basic.css">
+    <link rel="stylesheet" href="../../../resource/css/popup/layout.css">
+
+</head>
+
+<body>
+    <div class="window-layout">
+        <div class="high-network-layout">
+            <div class="box">
+                <div class="label">접속 설정</div>
+                <table>
+                    <colgroup>
+                        <col width="30%">
+                        <col width="35%">
+                        <col />
+                    </colgroup>
+                    <tbody>
+                        <tr>
+                            <td></td>
+                            <td><span>채널 1</span></td>
+                            <td><span>채널 2</span></td>
+                        </tr>
+                        <tr>
+                            <td><span>데이터 비트 :</span></td>
+                            <td>
+                                <select id="dataBit1">
+                                    <option value="7">7</option>
+                                    <option value="8" selected>8</option>
+                                </select>
+                            </td>
+                            <td>
+                                <select id="dataBit2">
+                                    <option value="7">7</option>
+                                    <option value="8" selected>8</option>
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><span>정지 비트 :</span></td>
+                            <td>
+                                <select id="stopBit1">
+                                    <option value="1">1</option>
+                                    <option value="2">2</option>
+                                </select>
+                            </td>
+                            <td>
+                                <select id="stopBit2">
+                                    <option value="1">1</option>
+                                    <option value="2">2</option>
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><span>패리티 비트 :</span></td>
+                            <td>
+                                <select id="parityBit1">
+                                    <option value="NONE">NONE</option>
+                                    <option value="EVEN">EVEN</option>
+                                    <option value="ODD">ODD</option>
+                                </select>
+                            </td>
+                            <td>
+                                <select id="parityBit2">
+                                    <option value="NONE">NONE</option>
+                                    <option value="EVEN">EVEN</option>
+                                    <option value="ODD">ODD</option>
+                                </select>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+
+            </div>
+        </div>
+
+        <div class="separate"></div>
+
+        <div class="time-network-layout">
+            <div class="box action-box">
+                <div class="label">시간 설정</div>
+                <table>
+                    <colgroup>
+                        <col width="30%">
+                        <col width="35%">
+                        <col />
+                    </colgroup>
+                    <tbody>
+                        <tr>
+                            <td>응답 대기 시간:</td>
+                            <td><input type="text" id="waitTime1" readonly></td>
+                            <td><input type="text" id="waitTime2" readonly></td>
+                        </tr>
+                        <tr>
+                            <td>지연 시간:</td>
+                            <td><input type="text" id="delayTime1" readonly></td>
+                            <td><input type="text" id="delayTime2" readonly></td>
+                        </tr>
+                        <tr>
+                            <td>문자 대기 시간:</td>
+                            <td><input type="text" id="characterWaitTime1" readonly></td>
+                            <td><input type="text" id="characterWaitTime2" readonly></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+            </div>
+        </div>
+
+        <div class="button-layout">
+            <button id="btnConfirm">확인</button>
+            <button id="cancel">취소</button>
+        </div>
+
+    </div>
+</body>
+
+<script type="text/javascript">
+
+    const rootPath = __dirname + '/../../../..';
+    const resourcePath = rootPath + '/src/resource';
+    const utilPath = resourcePath + '/js/util';
+
+    const uconsole = require(utilPath + '/utilConsole');
+
+    var setData = function (opt) {
+        $('#dataBit1').val(opt.dataBit1);
+        $('#dataBit2').val(opt.dataBit2);
+        $('#stopBit1').val(opt.stopBit1);
+        $('#stopBit2').val(opt.stopBit2);
+        $('#parityBit1').val(opt.parityBit1);
+        $('#parityBit2').val(opt.parityBit2);
+
+        // $('#waitTime1').val(opt.waitTime1);
+        // $('#waitTime2').val(opt.waitTime2);
+        // $('#delayTime1').val(opt.delayTime1);
+        // $('#delayTime2').val(opt.delayTime2);
+        // $('#characterWaitTime1').val(opt.characterWaitTime1);
+        // $('#characterWaitTime2').val(opt.characterWaitTime2);
+    }
+
+    var getData = function () {
+        return {
+            dataBit1: $('#dataBit1 option:selected').val(),
+            dataBit2: $('#dataBit2 option:selected').val(),
+            stopBit1: $('#stopBit1 option:selected').val(),
+            stopBit2: $('#stopBit2 option:selected').val(),
+            parityBit1: $('#parityBit1 option:selected').val(),
+            parityBit2: $('#parityBit2 option:selected').val(),
+
+            waitTime1: $('#waitTime1').val(),
+            waitTime2: $('#waitTime2').val(),
+            delayTime1: $('#delayTime1').val(),
+            delayTime2: $('#delayTime2').val(),
+            characterWaitTime1: $('#characterWaitTime1').val(),
+            characterWaitTime2: $('#characterWaitTime2').val()
+        }
+    }
+
+    // 확인 
+    $('#btnConfirm').on('click', function () {
+        var data = getData();
+        uconsole.log(JSON.stringify(data));
+
+        // TODO : data 저장
+    });
+
+    // 취소
+    $('#cancel').on('click', function () {
+        window.close();
+    });
+
+    // ESC 키 - 창 닫기
+    window.onkeydown = function (event) {
+        if (event.key == 'Escape') {
+            window.close();
+        }
+    }
+
+    // html 내부 블럭 선택 방지
+    $('body').bind("selectstart", function (e) {
+        return false;
+    });
+
+    // TODO : 데이터가 있다면 setData(opt) 실행
+
+</script>
+
+</html>

@@ -1,0 +1,592 @@
+<html>
+
+<head>
+    <link rel="stylesheet" href="../../../../resource/css/basic.css">
+    <link rel="stylesheet" href="../../../../resource/css/editor.css">
+
+    <style type='text/css'>
+        body, input, label, td, th {
+           /* font-family: 'SourceSansPro-Regular'; */
+           font-size: 0.95em;
+           background-color: #ffffff;
+        }
+    </style>
+
+    <!-- jquery 로딩 -->
+    <script>window.$ = window.jQuery = require('jquery');</script>
+</head>
+
+<body>
+    <div class="active-defaultParameter-layout">
+        <div class="cycleLayout">
+            <div>기본 동작 설정</div>
+            <table>
+                <colgroup>
+                    <col width="30px">
+                    <col width="120px">
+                    <col width="200px">
+                    <col />
+                </colgroup>
+                <tbody>
+                    <tr>
+                        <td><input type="checkbox" id="cycle"></td>
+                        <td><label for="cycle">고정 주기 운전 :</label></td>
+                        <td><input type="text" id="cycleValue" class="parameterValue" disabled></td>
+                        <td>ms</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="timeLayout">
+            <div>시간 설정</div>
+            <table>
+                <colgroup>
+                    <col width="30px">
+                    <col width="120px">
+                    <col width="200px">
+                    <col />
+                </colgroup>
+                <tbody>
+                    <tr>
+                        <td><input type="checkbox" id="watchDoc"></td>
+                        <td><label for="watchDoc">워치독 타이머 :</label></td>
+                        <td><input type="text" id="watchDocValue" class="parameterValue" disabled></td>
+                        <td>ms</td>
+                    </tr>
+                    <tr>
+                        <td><input type="checkbox" id="filter"></td>
+                        <td><label for="filter">딜레이 타이머 :</label></td>
+                        <td><input type="text" id="filterValue" class="parameterValue" disabled></td>
+                        <td>sec</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="restartModeLayout">
+            <div>리스타트 모드 설정</div>
+            <table>
+                <colgroup>
+                    <col width="30px">
+                    <col width="80px">
+                    <col width="30px">
+                    <col />
+                </colgroup>
+                <tbody>
+                    <tr>
+                        <td><input type="radio" id="cold" name="restartMode"></td>
+                        <td><label for="cold">콜드 방식</label></td>
+                        <td><input type="radio" id="warm" name="restartMode" checked></td>
+                        <td><label for="warm">웜 방식</label></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="error-defaultParameter-layout">
+        <div class="errorLayout">
+            <div>에러 동작 설정</div>
+            <table>
+                <colgroup>
+                    <col width="30px">
+                    <col />
+                </colgroup>
+                <tbody>
+                    <tr>
+                        <td><input type="checkbox" id="calculateError"></td>
+                        <td><label for="calculateError">연산 에러시 운전 진행</label></td>
+                    </tr>
+                    <tr>
+                        <td><input type="checkbox" id="networkError"></td>
+                        <td><label for="networkError">통신 모듈 에러시 운전 진행</label></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="area-defaultParameter-layout">
+        <div class="areaLayout">
+            <div>데이터 저장 영역</div>
+            <table id="dataTable">
+                <colgroup>
+                    <col width="25%">
+                    <col width="25%" />
+                    <col width="25%" />
+                    <col />
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th colspan="4">
+                            <table class="subjectTable">
+                                <colgroup>
+                                    <col width="25%">
+                                    <col width="25%" />
+                                    <col width="25%" />
+                                    <col />
+                                </colgroup>
+                                <thead>
+                                    <tr>
+                                        <th>종류</th>
+                                        <th>사용</th>
+                                        <th>시작종료</th>
+                                        <th>끝주소</th>
+                                    </tr>
+                                </thead>
+                            </table>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+
+<script type="text/javascript">
+
+    const path = require('path');
+    const { ipcRenderer, remote } = require('electron');
+    const { Menu } = remote;
+
+    const rootPath = path.join(__dirname, '/../../../../..');
+    const resourcePath = rootPath + '/src/resource';
+    const rendererPath = resourcePath + '/js/renderer';
+    const definePath = resourcePath + '/js/define';
+    const ipcPath = resourcePath + '/js/main/ipc';
+    const utilPath = resourcePath + '/js/util';
+
+    const req = require(definePath + '/req');
+    const action = require(definePath + '/action');
+    const uconsole = require(utilPath + '/utilConsole');
+    const xmlManager = require(rendererPath + '/xmlManager');
+
+    var focusTarget;
+
+    var projPath;
+    var projName;
+    var plcName;
+
+    const contextMenuItem = [
+        {
+            id: 'undo',
+            label: '실행 취소',
+            icon: resourcePath + '/image/index/menu/menu_undo.png',
+            enabled: false,
+            click() {
+                uconsole.log('undo');
+            }
+        },
+        {
+            id: 'redo',
+            label: '재 실행',
+            icon: resourcePath + '/image/index/menu/menu_redo.png',
+            enabled: false,
+            click() {
+                uconsole.log('redo');
+            }
+        },
+        { type: 'separator' },
+        {
+            id: 'cut',
+            label: '잘라내기',
+            icon: resourcePath + '/image/index/menu/menu_cut.png',
+            enabled: true,
+            click() {
+                sessionStorage.setItem('copy', $(focusTarget).val());
+                $(focusTarget).val('');
+            }
+        },
+        {
+            id: 'copy',
+            label: '복사',
+            icon: resourcePath + '/image/index/menu/menu_copy.png',
+            enabled: true,
+            click() {
+                sessionStorage.setItem('copy', $(focusTarget).val());
+
+            }
+        },
+        {
+            id: 'paste',
+            label: '붙여넣기',
+            icon: resourcePath + '/image/index/menu/menu_paste.png',
+            enabled: true,
+            click() {
+                $(focusTarget).val($(focusTarget).val() + (sessionStorage.getItem('copy') == null ? '' : sessionStorage.getItem('copy')));
+            }
+        },
+        {
+            id: 'remove',
+            label: '삭제',
+            icon: resourcePath + '/image/index/menu/menu_remove.png',
+            enabled: true,
+            click() {
+                $(focusTarget).val('');
+            }
+        }
+    ];
+
+    // contextMenu 팝업 보기 설정
+    var setContextMenuEvent = function (tr) {
+
+        if (typeof tr === 'undefined') {
+            uconsole.error('tr 파라미터 값이 정의 되지 않앗습니다.');
+            return;
+        }
+
+        $(tr).contextmenu(function (e) {
+
+            focusTarget = e.target;
+
+            if (focusTarget.tagName == 'INPUT' && !$(focusTarget).prop('disabled')) {
+                var contextMenu = Menu.buildFromTemplate(contextMenuItem);
+                contextMenu.popup();
+            }
+
+            return false;
+        });
+
+    }
+
+    // 초기 데이터 설정
+    var setData = function (opt) {
+        if (opt.cycle.isActive) {
+            $('#cycle').attr('checked', opt.cycle.isActive);
+            $('#cycleValue').val(opt.cycle.value);
+            $('#cycleValue').attr("disabled", false);
+        }
+        
+        if (opt.watchDoc.isActive) {
+            $('#watchDoc').attr('checked', opt.watchDoc.isActive);
+            $('#watchDocValue').val(opt.watchDoc.value);
+            $('#watchDocValue').attr("disabled", false);
+        }
+
+        if (opt.filter.isActive) {
+            $('#filter').attr('checked', opt.filter.isActive);
+            $('#filterValue').val(opt.filter.value);
+            $('#filterValue').attr("disabled", false);
+        }
+
+        switch (opt.restartMode) {
+            case 'cold':
+                $('#cold').attr('checked', true);
+                $('#warm').attr('checked', false);
+                break;
+            case 'warm':
+                $('#cold').attr('checked', false);
+                $('#warm').attr('checked', true);
+                break;
+        }
+        
+        $('#calculateError').attr('checked', opt.calculateError);
+        $('#networkError').attr('checked', opt.networkError);
+
+        var index;
+        $('#dataTable tbody tr').each(function () {
+            index = $(this).index();
+            if ( opt.area[index].isUse) {
+                $(this).children('td:eq(1)').find('input').attr("checked", opt.area[index].isUse);
+                $(this).children('td:eq(2)').find('input').val(opt.area[index].start);
+                $(this).children('td:eq(2)').find('input').attr("disabled", false);
+                $(this).children('td:eq(3)').find('input').val(opt.area[index].end);    
+                $(this).children('td:eq(3)').find('input').attr("disabled", false);
+            }
+        });
+    }
+
+    // 초기 데이터 설정
+    ipcRenderer.on(req.editor, function (event, opt) {
+        projPath = opt.projPath;
+        projName = opt.projName;
+        plcName = opt.plcName;
+
+        var data = xmlManager.readDefualtParam({
+            projPath: projPath,
+            projName: projName,
+            plcName: plcName
+        });
+
+        if ( typeof data !== 'undefined') {
+            setData(data);
+        }
+
+    });
+
+    // 열 추가
+    var addRow = function (area) {
+        var row = '';
+        row += '<tr>';
+        row += '    <td ><label class="name">' + area + '</label></td>';
+        row += '    <td style="text-align:center;"><input class="use" type="checkbox" disabled></td>';
+        row += '    <td ><input class="start" type="text" disabled></td>';
+        row += '    <td ><input class="end" type="text" disabled></td>';
+        row += '</tr>';
+
+        $('#dataTable > tbody:last-child').append(row);
+        var tr = $('#dataTable > tbody tr:last');
+
+        // ContextMenu 팝업 이벤트 추가
+        setContextMenuEvent(tr);
+
+        // 체크 박스 이벤트 
+        // tr.children('td').children('.use').on('click', function () {
+        //     var currentTr = $(this).parent().parent();
+
+        //     if ($(this).is(":checked")) {
+        //         currentTr.children('td').children('input[type="text"]').attr('disabled', false);
+        //     } else {
+        //         currentTr.children('td').children('input[type="text"]').attr('disabled', true);
+        //     }
+        // });
+
+        // 체크 박스의 셀 이벤트 
+        tr.children('td:eq(1)').on('click', function () {
+
+            if ($(this).children('.use').is(":checked")) {
+                $(this).children('.use').attr("checked", false);
+                tr.children('td').children('input[type="text"]').attr('disabled', true).val('');
+            } else {
+                $(this).children('.use').attr("checked", true);
+                tr.children('td').children('input[type="text"]').attr('disabled', false);
+            }
+
+            var datas = {
+                projPath: projPath,
+                projName: projName,
+                plcName: plcName,
+                id: 'area',
+                datatable: []
+            };
+
+            $('#dataTable tbody tr').each(function () {
+                datas.datatable.push({
+                    isUse: $(this).children('td:eq(1)').find('input').is(":checked"),
+                    start: $(this).children('td:eq(2)').find('input').val(),
+                    end: $(this).children('td:eq(3)').find('input').val()
+                });
+            });
+
+            xmlManager.writeDefualtParamToSet(datas);
+        });
+
+        tr.children('td').find('input').on('blur', function () {
+            var datas = {
+                projPath: projPath,
+                projName: projName,
+                plcName: plcName,
+                id: 'area',
+                datatable: []
+            };
+
+            $('#dataTable tbody tr').each(function () {
+                datas.datatable.push({
+                    isUse: $(this).children('td:eq(1)').find('input').is(":checked"),
+                    start: $(this).children('td:eq(2)').find('input').val(),
+                    end: $(this).children('td:eq(3)').find('input').val()
+                });
+            });
+
+            xmlManager.writeDefualtParamToSet(datas);
+        });
+
+    };
+
+    // 표준 필터 체크 변경 
+    $('#filter').on('change', function () {
+        if ($(this).is(':checked')) {
+            $('#filterValue').attr('disabled', false);
+        } else {
+            $('#filterValue').attr('disabled', true);
+        }
+    });
+
+    // 고정 주기 운전 체크 변경 
+    $('#cycle').on('change', function () {
+        if ($(this).is(':checked')) {
+            $('#cycleValue').attr('disabled', false);
+        } else {
+            $('#cycleValue').attr('disabled', true);
+        }
+    });
+
+    // 워치 독 타이머 체크 변경 
+    $('#watchDoc').on('change', function () {
+        if ($(this).is(':checked')) {
+            $('#watchDocValue').attr('disabled', false);
+        } else {
+            $('#watchDocValue').attr('disabled', true);
+        }
+    });
+
+    // 숫자형 포멧 ( 콤마 붙이기 포맷 )
+    var formatNumber = function (num) {
+        return num.toString().replace(/(\d)(?=(\d{3})+(?!\d))/g, '$1,')
+    }
+
+    // 문자열 값이 비어 있는지 확인
+    var isEmpty = function (text) {
+        if (typeof text === 'undefined' || text.trim().length == 0) {
+            return true;
+        }
+
+        return false;
+    }
+
+    // 자동 콤마 제거
+    var removeComma = function (element) {
+        var val = element.val();
+
+        if (!isEmpty(val)) {
+            val = val.replace(/,/g, "");
+            element.val(val);
+        }
+    }
+
+    // 자동 콤마 추가
+    var addComma = function (element) {
+        var val = element.val();
+
+        if (!isEmpty(val)) {
+            element.val(formatNumber(val));
+        }
+    }
+
+    // 주기 값 변경 저장 및 화면 출력
+    $('#cycleValue').on('focus', function () {
+        removeComma($(this));
+    }).on('focusout', function () {
+        var id = $(this).parent().parent().children('td:eq(0)').find('input').attr('id');
+        xmlManager.writeDefualtParamToSet({
+            projPath: projPath,
+            projName: projName,
+            plcName: plcName,
+            id: id,
+            value: $(this).val(),
+            isActive: $('#' + id).is(":checked")
+        });
+
+        addComma($(this));
+    }).on('keyup', function () {
+        $(this).val($(this).val().replace(/[^0-9]/g, ""));
+    });
+
+    // watchDoc 값 변경 저장 및 화면 출력
+    $('#watchDocValue').on('focus', function () {
+        removeComma($(this));
+    }).on('focusout', function () {
+        var id = $(this).parent().parent().children('td:eq(0)').find('input').attr('id');
+        xmlManager.writeDefualtParamToSet({
+            projPath: projPath,
+            projName: projName,
+            plcName: plcName,
+            id: id,
+            value: $(this).val(),
+            isActive: $('#' + id).is(":checked")
+        });
+
+        addComma($(this));
+    }).on('keyup', function () {
+        $(this).val($(this).val().replace(/[^0-9]/g, ""));
+    });
+
+    // 표준 필터 값 변경 저장 및 화면 출력
+    $('#filterValue').on('focus', function () {
+        removeComma($(this));
+    }).on('focusout', function () {
+        var id = $(this).parent().parent().children('td:eq(0)').find('input').attr('id');
+        xmlManager.writeDefualtParamToSet({
+            projPath: projPath,
+            projName: projName,
+            plcName: plcName,
+            id: id,
+            value: $(this).val(),
+            isActive: $('#' + id).is(":checked")
+        });
+
+        addComma($(this));
+    }).on('keyup', function () {
+        $(this).val($(this).val().replace(/[^0-9]/g, ""));
+    });
+
+    // 재시작 모드 설정
+    $('input[name="restartMode"]').on('change', function () {
+        xmlManager.writeDefualtParamToSet({
+            projPath: projPath,
+            projName: projName,
+            plcName: plcName,
+            id: 'restartMode',
+            value: $(this).attr('id'),
+        });
+    });
+
+    // 연산 오류 설정
+    $('#calculateError').on('change', function () {
+        xmlManager.writeDefualtParamToSet({
+            projPath: projPath,
+            projName: projName,
+            plcName: plcName,
+            id: $(this).attr('id'),
+            isActive: $(this).is(':checked'),
+        });
+    });
+
+    // 네트워크 오류 설정
+    $('#networkError').on('change', function () {
+        xmlManager.writeDefualtParamToSet({
+            projPath: projPath,
+            projName: projName,
+            plcName: plcName,
+            id: $(this).attr('id'),
+            isActive: $(this).is(':checked'),
+        });
+    });
+
+
+    // 기본 10개 생성
+    for (var i = 0; i < 7; i++) {
+        var area;
+        switch (i) {
+            case 0:
+                area = '입력 데이터';
+                break;
+            case 1:
+                area = '출력 데이터';
+                break;
+            case 2:
+                area = '일반 데이터';
+                break;
+            case 3:
+                area = '카운트';
+                break;
+            case 4:
+                area = 'T(100ms)';
+                break;
+            case 5:
+                area = 'T(10ms)';
+                break;
+            case 6:
+                area = 'T(1ms)';
+                break;
+        }
+        addRow(area);
+
+    }
+
+    // 브라우져 기본 기능 막기
+    $(document).bind('cut copy paste ', function (e) {
+        e.preventDefault();
+    });
+
+    // html 내부 블럭 선택 방지
+    $('body').bind("selectstart", function (e) {
+        return false;
+    });
+
+</script>
+
+</html>

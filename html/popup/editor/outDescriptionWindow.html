@@ -1,0 +1,62 @@
+<html>
+
+<head>
+    <script>window.$ = window.jQuery = require('jquery');</script>
+    <link rel="stylesheet" href="../../../resource/css/basic.css">
+    <link rel="stylesheet" href="../../../resource/css/popup/layout.css">
+</head>
+
+<body>
+    <div class="window-layout">
+        <div class="description-layout">
+            <textarea id="content"></textarea>
+        </div>
+        <div class="button-layout">
+            <button id="btnConfirm">확인</button>
+            <button id="cancel">취소</button>
+        </div>
+    </div>
+</body>
+
+<script type="text/javascript">
+
+    const rootPath = __dirname + '/../../../..';
+    const resourcePath = rootPath + '/src/resource';
+    const definePath = resourcePath + '/js/define';
+    const rendererPath = resourcePath + '/js/renderer';
+    const utilPath = resourcePath + '/js/util';
+
+    const req = require(definePath + '/req')
+
+    const uconsole = require(utilPath + '/utilConsole');
+
+    const { ipcRenderer } = require('electron');
+
+    const config = require(definePath + '/config');
+
+    // 출력 설명문 수신 
+    ipcRenderer.on(req.outDescription, (event, content) => {
+        $('#content').val(content);
+    });
+
+    // 확인 - 출력 설명문 전송
+    $('#btnConfirm').on('click', function () {
+        ipcRenderer.send(req.setOutDescription, $('#content').val());
+        window.close();
+    });
+
+    // 닫기 - 창 닫기
+    $('#cancel').on('click', function () {
+        window.close();
+    });
+
+    // ESC 키 - 창 닫기
+    window.onkeydown = function (event) {
+        if (event.key == 'Escape') {
+            window.close();
+        }
+    }
+
+</script>
+
+</html>

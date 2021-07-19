@@ -1,0 +1,785 @@
+<html>
+
+<head>
+    <script>window.$ = window.jQuery = require('jquery');</script>
+
+    <link rel="stylesheet" href="../../../resource/css/basic.css">
+    <link rel="stylesheet" href="../../../resource/css/popup/layout.css">
+
+</head>
+
+<body>
+    <div class="window-layout">
+        <div class="functionSelect-layout">
+            <div class="label">변수</div>
+            <table>
+                <colgroup>
+                    <col width="25%">
+                    <col />
+                </colgroup>
+                <tbody>
+                    <tr>
+                        <td><span>이름 :</span></td>
+                        <td><input type="text" id="variable"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="separate"></div>
+
+        <div class="functionSelect-type-layout">
+            <div class="label">종류</div>
+            <table>
+                <colgroup>
+                    <col width="30px" />
+                    <col width="80px" />
+                    <col width="30px" />
+                    <col width="80px" />
+                    <col width="30px" />
+                    <col />
+                </colgroup>
+                <tbody>
+                    <tr>
+                        <td><input type="radio" id="func" name="functionType"></td>
+                        <td><label for="func">펑션</label></td>
+                        <td><input type="radio" id="funcBlock" name="functionType" disabled></td>
+                        <td><label for="funcBlock">펑션 블럭</label></td>
+                        <td><input type="radio" id="all" name="functionType" checked></td>
+                        <td><label for="all">펑션 / 펑션 블럭</label></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="separate"></div>
+
+        <div class="functionSelect-list-layout">
+            <div class="label">목록</div>
+            <div class="functionSelect-keyword-box">
+                <table id="functionSelect-table">
+                    <tbody id="functionSelect-keyword-list">
+                    </tbody>
+                </table>
+            </div>
+            <div class="functionSelect-mod-box">
+                <table id="functionSelect-table">
+                    <tbody id="functionSelect-mod-list">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="separate"></div>
+
+        <div class="functionSelect-draw-layout">
+            <div class="label" style="width: 180px;">펑션 / 펑션 블럭 정보</div>
+
+            <div class="draw">
+                <div id="input" class="inputParam">
+                    <ul></ul>
+                </div>
+                <div id="funcBody">
+                    <div class="funcName"><span id="funcName">펑션 이름</span></div>
+                    <div class="inputParam-inner">
+                        <ul></ul>
+                    </div>
+                    <div class="outputParam-inner">
+                        <ul></ul>
+                    </div>
+                </div>
+                <div id="output" class="outputParam">
+                    <ul></ul>
+                </div>
+            </div>
+
+            <div class="funcType">
+                <table>
+                    <tr>
+                        <td>입력 : </td>
+                        <td>
+                            <select id="inputSelect" disabled>
+                                <option value="1">1</option>
+                                <option value="2">2</option>
+                                <option value="3">3</option>
+                                <option value="4">4</option>
+                                <option value="5">5</option>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>출력 : </td>
+                        <td>
+                            <select id="outputSelect" disabled>
+                                <option value="1">1</option>
+                                <option value="2">2</option>
+                                <option value="3">3</option>
+                                <option value="4">4</option>
+                                <option value="5">5</option>
+                            </select>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <div class="button-layout">
+            <button id="btnConfirm">확인</button>
+            <button id="cancel">취소</button>
+        </div>
+    </div>
+</body>
+
+<script type="text/javascript">
+
+    const path = require('path');
+    const os = require('os');
+    var { username } = os.userInfo();
+
+    const rootPath = __dirname + '/../../../..';
+    const resourcePath = rootPath + '/src/resource';
+    const rendererPath = resourcePath + '/js/renderer';
+    const utilPath = resourcePath + '/js/util';
+    const definePath = resourcePath + '/js/define';
+
+    const xmlManager = require(rendererPath + '/xmlManager');
+    const req = require(definePath + '/req');
+    const { alertWindow } = require(utilPath + '/utilAlert');
+    const { ipcRenderer } = require('electron');
+    const uconsole = require(utilPath + '/utilConsole');
+    const uFile = require(utilPath + '/utilFile');
+    const config = require(definePath + '/config');
+
+
+    var funcVarClass;
+
+    var aiPrefix = 'AI-';
+
+    // 분류 열 추가
+    var addKeywordTr = function (tbody, name) {
+        var length = tbody.children('tr').length;
+        var html = '';
+        html += '<tr class="selected">';
+        html += '<td>' + name + '</td>';
+        html += '</tr>';
+
+        tbody.append(html);
+
+        tbody.children('tr:last').on('click', function () {
+
+            var tr = $(this);
+
+            tbody.children('tr').each(function () {
+                $(this).children('td').css({
+                    'background-color': '#424242'
+                });
+                $(this).removeClass('selected');;
+            });
+
+            if (!tr.hasClass('selected')) {
+                tr.children('td').css({
+                    'background-color': '#3399ff'
+                });
+                tr.addClass('selected');
+            } else {
+                tr.children('td').css({
+                    'background-color': '#424242'
+                });
+                tr.removeClass('selected');
+            }
+
+            // addModeTr 
+            // TODO : mod 값 가져오기
+            $('#functionSelect-mod-list').empty();
+
+            var keyword = tr.find('td').html();
+
+            var funcType = $("input:radio[name='functionType']:checked").attr('id');
+
+            switch (keyword) {
+                case "전체":
+                    if (funcType == 'func' || funcType == 'all') {
+                        for (var i in aiList) {
+                            addModTr($('#functionSelect-mod-list'), aiPrefix + aiList[i], false);
+                        }
+                        addModTr($('#functionSelect-mod-list'), 'LT'); // 타임 펑션 ( LINUXIT TIME COMMAND )
+                        addModTr($('#functionSelect-mod-list'), 'INIT'); // 초기화 펑션 ( LINUXIT INITIALIZATION COMMAND )
+                        addModTr($('#functionSelect-mod-list'), 'EXAMPLE'); // 테스트
+                    }
+
+                    // if (funcType == 'funcBlock' || funcType == 'all') {
+                    //     addModTr($('#functionSelect-mod-list'), 'TON');
+                    //     addModTr($('#functionSelect-mod-list'), 'TOFF');
+                    //     addModTr($('#functionSelect-mod-list'), 'TRTG');
+                    //     addModTr($('#functionSelect-mod-list'), 'CTD'); // 감산 카운터
+                    //     addModTr($('#functionSelect-mod-list'), 'CTU'); // 가산 카운터
+                    //     addModTr($('#functionSelect-mod-list'), 'CTUD'); // 가산 / 감산 카운터
+                    // }
+                    break;
+                case "AI":
+                    if (funcType == 'func' || funcType == 'all') {
+                        for (var i in aiList) {
+                            addModTr($('#functionSelect-mod-list'), aiPrefix + aiList[i], false);
+                        }
+                    }
+                    break;
+                case "TIME":
+                    if (funcType === 'func' || funcType == 'all') {
+                        addModTr($('#functionSelect-mod-list'), 'LT'); // 타임 펑션 ( LINUXIT TIME COMMAND )
+                    // } else if (funcType == 'funcBlock' || funcType == 'all') {
+                    //     addModTr($('#functionSelect-mod-list'), 'TON');
+                    //     addModTr($('#functionSelect-mod-list'), 'TOFF');
+                    //     addModTr($('#functionSelect-mod-list'), 'TRTG');
+                    }
+                    break;
+                case "COUNT":
+                    // if (funcType == 'funcBlock' || funcType == 'all') {
+                    //     addModTr($('#functionSelect-mod-list'), 'CTD'); // 감산 카운터
+                    //     addModTr($('#functionSelect-mod-list'), 'CTU'); // 가산 카운터
+                    //     addModTr($('#functionSelect-mod-list'), 'CTUD'); // 가산 / 감산 카운터
+                    // }
+                    break;
+                case "SAMPLE":
+                    if (funcType == 'func' || funcType == 'all') {
+                        addModTr($('#functionSelect-mod-list'), 'INIT'); // 초기화 펑션 ( LINUXIT INITIALIZATION COMMAND )
+                        addModTr($('#functionSelect-mod-list'), 'EXAMPLE'); // 테스트
+                    }
+                    break;
+            }
+
+            initDraw();
+
+            $('#funcBody').hide();
+
+            $('#inputSelect').attr('disabled', true);
+            $('#outputSelect').attr('disabled', true);
+        });
+    };
+
+    // 모듈 열 추가
+    var addModTr = function (tbody, name, isNotEvent) {
+        var length = tbody.children('tr').length;
+        var html = '';
+        html += '<tr class="selected">';
+        html += '<td class="name">' + name + '</td>';
+        html += '</tr>';
+
+        tbody.append(html);
+
+        if (typeof isNotEvent !== 'undefined' && isNotEvent) {
+            return;
+        }
+
+        tbody.children('tr:last').on('click', function () {
+
+            var tr = $(this);
+
+            tr.parent().children('tr').each(function () {
+                $(this).children('td').css({
+                    'background-color': '#424242'
+                });
+                $(this).removeClass('selected');;
+            });
+
+            if (!tr.hasClass('selected')) {
+                tr.children('td').css({
+                    'background-color': '#3399ff'
+                });
+                tr.addClass('selected');
+            } else {
+                tr.children('td').css({
+                    'background-color': '#424242'
+                });
+                tr.removeClass('selected');
+            }
+
+            funcVarClass = searchFunc(tr.find('.name').text().trim());
+
+            drawFunc(tr.find('.name').text().trim(), funcVarClass);
+
+        });
+    };
+
+    // 펑션 정보 UI 초기화
+    var initDraw = function () {
+        $('.inputParam li').remove();
+        $('.inputParam-inner li').remove();
+        $('.outputParam li').remove();
+        $('.outputParam-inner li').remove();
+
+        $('#funcBody').css({
+            "height": "35px"
+        });
+    }
+
+    // 펑션의 검색 ( 펑션 종류 검색 - 2차년도에는 기본 펑션 종류 리스트 목록을 가지고 있어야함. )
+    var searchFunc = function (funcName) {
+
+        var varName = $('#variable').val();
+
+        var funcVarClass;
+        switch (funcName) {
+            case "TON":
+                funcVarClass = {
+                    varName: varName,
+                    funcName: funcName,
+                    type: 'funcBlock',
+                    inputNum: 2,
+                    outputNum: 2,
+                    input: [
+                        { index: 0, varType: 'input', dataType: "BOOL", varName: "IN" },
+                        { index: 1, varType: 'input', dataType: "TIME", varName: "PT" }
+                    ],
+                    output: [
+                        { index: 0, varType: 'output', dataType: "BOOL", varName: "ENO" },
+                        { index: 1, varType: 'output', dataType: "TIME", varName: "ET" }
+                    ]
+                }
+                break;
+            case "TOFF":
+                funcVarClass = {
+                    varName: varName,
+                    funcName: funcName,
+                    type: 'funcBlock',
+                    inputNum: 2,
+                    outputNum: 2,
+                    input: [
+                        { index: 0, varType: 'input', dataType: "BOOL", varName: "IN" },
+                        { index: 1, varType: 'input', dataType: "TIME", varName: "PT" }
+                    ],
+                    output: [
+                        { index: 0, varType: 'output', dataType: "BOOL", varName: "Q" },
+                        { index: 1, varType: 'output', dataType: "TIME", varName: "ET" }
+                    ]
+                }
+                break;
+            case "TRTG":
+                funcVarClass = {
+                    varName: varName,
+                    funcName: funcName,
+                    type: 'funcBlock',
+                    inputNum: 3,
+                    outputNum: 2,
+                    input: [
+                        { index: 0, varType: 'input', dataType: "BOOL", varName: "IN" },
+                        { index: 1, varType: 'input', dataType: "TIME", varName: "PT" },
+                        { index: 2, varType: 'input', dataType: "BOOL", varName: "RST" }
+                    ],
+                    output: [
+                        { index: 0, varType: 'output', dataType: "BOOL", varName: "Q" },
+                        { index: 1, varType: 'output', dataType: "TIME", varName: "ET" }
+                    ]
+                }
+                break;
+            case "CTD":
+                funcVarClass = {
+                    varName: varName,
+                    funcName: funcName,
+                    type: 'funcBlock',
+                    inputNum: 3,
+                    outputNum: 2,
+                    input: [
+                        { index: 0, varType: 'input', dataType: "BOOL", varName: "CD" },
+                        { index: 1, varType: 'input', dataType: "BOOL", varName: "LD" },
+                        { index: 2, varType: 'input', dataType: "INT", varName: "PV" }
+                    ],
+                    output: [
+                        { index: 0, varType: 'output', dataType: "BOOL", varName: "Q" },
+                        { index: 1, varType: 'output', dataType: "INT", varName: "CV" }
+                    ]
+                }
+                break;
+            case "CTU":
+                funcVarClass = {
+                    varName: varName,
+                    funcName: funcName,
+                    type: 'funcBlock',
+                    inputNum: 3,
+                    outputNum: 2,
+                    input: [
+                        { index: 0, varType: 'input', dataType: "BOOL", varName: "CU" },
+                        { index: 1, varType: 'input', dataType: "BOOL", varName: "R" },
+                        { index: 2, varType: 'input', dataType: "INT", varName: "PV" }
+                    ],
+                    output: [
+                        { index: 0, varType: 'output', dataType: "BOOL", varName: "Q" },
+                        { index: 1, varType: 'output', dataType: "INT", varName: "INT" }
+                    ]
+                }
+                break;
+            case "CTUD":
+                funcVarClass = {
+                    varName: varName,
+                    funcName: funcName,
+                    type: 'funcBlock',
+                    inputNum: 5,
+                    outputNum: 3,
+                    input: [
+                        { index: 0, varType: 'input', dataType: "BOOL", varName: "CU" },
+                        { index: 1, varType: 'input', dataType: "BOOL", varName: "CD" },
+                        { index: 2, varType: 'input', dataType: "BOOL", varName: "R" },
+                        { index: 3, varType: 'input', dataType: "BOOL", varName: "LD" },
+                        { index: 4, varType: 'input', dataType: "INT", varName: "PV" }
+                    ],
+                    output: [
+                        { index: 0, varType: 'output', dataType: "BOOL", varName: "QU" },
+                        { index: 1, varType: 'output', dataType: "BOOL", varName: "QD" },
+                        { index: 2, varType: 'output', dataType: "INT", varName: "CV" }
+                    ]
+                }
+                break;
+            case "EXAMPLE":
+                funcVarClass = {
+                    varName: varName,
+                    funcName: funcName,
+                    type: 'func',
+                    inputNum: 1,
+                    outputNum: 3,
+                    input: [
+                        { index: 0, varType: 'input', dataType: "BOOL", varName: "EN" }
+                    ],
+                    output: [
+                        { index: 0, varType: 'output', dataType: "BOOL", varName: "ENO" },
+                        { index: 1, varType: 'output', dataType: "WORD", varName: "out" },
+                    ],
+                    return: { index: 2, varType: 'output', dataType: "BOOL", varName: "return" }
+                }
+                break;
+            case "LT":
+                funcVarClass = {
+                    varName: varName,
+                    funcName: funcName,
+                    type: 'func',
+                    inputNum: 2,
+                    outputNum: 2,
+                    input: [
+                        { index: 0, varType: 'input', dataType: "BOOL", varName: "EN" },
+                        { index: 1, varType: 'input', dataType: "TIME", varName: "TIME" }
+                    ],
+                    output: [
+                        { index: 0, varType: 'output', dataType: "BOOL", varName: "ENO" },
+                    ],
+                    return: { index: 1, varType: 'output', dataType: "BOOL", varName: "return" }
+                }
+                break;
+            case "INIT":
+                funcVarClass = {
+                    varName: varName,
+                    funcName: funcName,
+                    type: 'func',
+                    inputNum: 1,
+                    outputNum: 2,
+                    input: [
+                        { index: 0, varType: 'input', dataType: "BOOL", varName: "EN" },
+                    ],
+                    output: [
+                        { index: 0, varType: 'output', dataType: "BOOL", varName: "ENO" },
+                    ],
+                    return: { index: 1, varType: 'output', dataType: "BOOL", varName: "return" }
+                }
+                break;
+            default:
+                if (funcName.indexOf(aiPrefix) > -1) {
+                    funcVarClass = {
+                        varName: varName,
+                        funcName: funcName,
+                        type: 'func',
+                        inputNum: 1,
+                        outputNum: 2,
+                        input: [
+                            { index: 0, varType: 'input', dataType: "BOOL", varName: "EN" }
+                        ],
+                        output: [
+                            { index: 0, varType: 'output', dataType: "BOOL", varName: "ENO" }
+                        ],
+                        return: { index: 1, varType: 'output', dataType: "BOOL", varName: "return" },
+                        isAi: true
+                    };
+                }
+                break;
+        }
+
+        return funcVarClass;
+    };
+
+    // 펑션 정보 UI 그리기
+    var drawFunc = function (mod, funcVarClass) {
+
+        // 펑션 정보 보이기 
+        $('#funcBody').show();
+
+        // 펑션 이름 설정
+        $('#funcName').html(mod);
+
+        // 초기화
+        initDraw();
+
+        // 모듈 타입 검색 
+        var inputNum = funcVarClass.inputNum;
+        var outputNum = funcVarClass.outputNum;
+
+        // 입출력 개수 설정
+        $('#inputSelect').val(inputNum);
+        $('#outputSelect').val(outputNum);
+
+        // 펑션 중에서도 가능 한것과 하지 않는것을 구별해야함.... 
+        $('#inputSelect').attr('disabled', true);
+        $('#outputSelect').attr('disabled', true);
+
+        // if (funcVarClass.type === 'funcBlock') {
+        //     $('#inputSelect').attr('disabled', true);
+        //     $('#outputSelect').attr('disabled', true);
+        // } else {
+        //     $('#inputSelect').attr('disabled', false);
+        //     $('#outputSelect').attr('disabled', false);
+        // }
+
+        //  입력 또는 출력 기준 펑션 크기 그리기
+        var drawInput;
+        var drawOutput;
+
+        if (inputNum > outputNum) {
+            drawInput = true;
+            drawOutput = false;
+        } else {
+            drawInput = false;
+            drawOutput = true;
+        }
+
+        var inputs = funcVarClass.input;
+        var outputs = funcVarClass.output;
+
+        var i = 0;
+
+        for (i = 0; i < inputNum; i++) {
+            addParam(inputs[i].index, inputs[i].varType, inputs[i].varName, inputs[i].dataType, drawInput);
+        }
+
+        if (typeof funcVarClass.return !== 'undefined') {
+            for (i = 0; i < (outputNum - 1); i++) {
+                addParam(outputs[i].index, outputs[i].varType, outputs[i].varName, outputs[i].dataType, drawOutput);
+            }
+        } else {
+            for (i = 0; i < outputNum; i++) {
+                addParam(outputs[i].index, outputs[i].varType, outputs[i].varName, outputs[i].dataType, drawOutput);
+            }
+        }
+
+        if (typeof funcVarClass.return !== 'undefined') {
+            addParam(funcVarClass.return.index, funcVarClass.return.varType, funcVarClass.return.varName, funcVarClass.return.dataType, drawOutput);
+        }
+    }
+
+    // 함수 유효성 체크
+    ipcRenderer.on(req.validFuncReturn, function (event, opt) {
+
+        if (!opt.vaild) {
+            alertWindow(opt.content);
+            return;
+        }
+
+        ipcRenderer.send(req.funcVariableSelect, funcVarClass);
+
+        window.close();
+
+    });
+
+    // 확인 
+    $('#btnConfirm').on('click', function () {
+
+        var varName = $('#variable').val();
+
+        if (varName.trim().length == 0) {
+            alertWindow("펑션 변수 이름을 입력하세요.");
+            return;
+        }
+
+        funcVarClass.varName = varName;
+
+        // 펑션의 입력 또는 출력의 개수 가 가장많은 값
+        if (funcVarClass.inputNum > funcVarClass.outputNum) {
+            ipcRenderer.send(req.validFunc, funcVarClass.inputNum);
+        } else {
+            ipcRenderer.send(req.validFunc, funcVarClass.outputNum);
+        }
+
+    });
+
+    // 취소 - 창 닫기
+    $('#cancel').on('click', function () {
+        window.close();
+    });
+
+    // 펑션 변수 이름 받기
+    ipcRenderer.on(req.funcVariableReturn, function (event, opt) {
+
+        // 변수 이름 설정
+        $('#variable').val(opt.name);
+
+        funcVarClass = searchFunc(opt.funcName);
+
+        $('#func').attr('checked', false);
+        $('#funcBlock').attr('checked', false);
+        $('#all').attr('checked', true);
+
+        $('#functionSelect-keyword-list tr').each(function () {
+            if ($(this).find('td').text().trim() === '전체') {
+                $(this).addClass('selected');
+                $(this).css({
+                    'background-color': '#3399ff'
+                });
+            }
+
+            $(this).off('click');
+        });
+
+        $('#functionSelect-mod-list tr').each(function () {
+            if ($(this).find('td').text().trim() === funcVarClass.funcName) {
+                $(this).addClass('selected');
+                $(this).find('td').css({
+                    'background-color': '#3399ff'
+                });
+
+                // 선택된 아이템으로 화면 이동 (javascript 이용)
+                $(this).get(0).scrollIntoView(true);
+            }
+
+            $(this).off('click');
+        });
+
+        $("input[name='functionType']").attr('disabled', true);
+
+        drawFunc(funcVarClass.funcName, funcVarClass);
+
+        $('#variable').focus();
+    });
+
+    // 펑션 정보 UI에 파라미터 추가하기 
+    var addParam = function (index, keyword, varName, datType, isIncreaseSize) {
+
+        var param;
+        var paramInner;
+
+        if (keyword == 'input') {
+            param = '<li class=' + index + '>' + datType + '<span>ㅡ</span></li>'
+            paramInner = '<li class=' + index + '>' + varName + '</li>'
+            $('.inputParam ul:last-child').append(param);
+            $('.inputParam-inner ul:last-child').append(paramInner);
+            $('.inputParam').css({
+                'list-style': 'none'
+            });
+        } else {
+            param = '<li class=' + index + '><span >ㅡ</span>' + datType + '</li>';
+            paramInner = '<li class=' + index + '>' + varName + '</li>'
+
+            $('.outputParam ul:last-child').append(param);
+            $('.outputParam-inner ul:last-child').append(paramInner);
+
+            $('.outputParam').css({
+                'list-style': 'none'
+            });
+        }
+
+        if (isIncreaseSize) {
+            var height = $('#funcBody').height() + 30;
+
+            $('#funcBody').css({
+                "height": height + "px"
+            });
+        }
+
+    };
+
+    $('#inputSelect').on('change', function () {
+
+        if ($('#variable').val().trim().length == 0) {
+            return;
+        }
+
+        var inputNum = parseInt($(this).val(), 10);
+
+        // if ( funcVarClass.inputNum > inputNum ) {
+        //     $('#inputSelect').val(funcVarClass.inputNum);
+        //     return false;
+        // }
+
+        for (var i = (funcVarClass.inputNum - 1); i < inputNum; i++) {
+            funcVarClass.input.push({ index: i, varType: 'input', dataType: "ANY", varName: "in" + i });
+        }
+
+        funcVarClass.inputNum = inputNum;
+
+        drawFunc($('#variable').val(), funcVarClass);
+    });
+
+    $('#outputSelect').on('change', function () {
+        if ($('#variable').val().trim().length == 0) {
+            return;
+        }
+
+        var outputNum = parseInt($(this).val(), 10);
+
+        // if ( funcVarClass.outputNum > outputNum ) {
+        //     $('#outputSelect').val(funcVarClass.outputNum);
+        //     return false;
+        // }
+
+        for (var i = (funcVarClass.outputNum - 1); i < outputNum; i++) {
+            funcVarClass.output.push({ index: i, varType: 'output', dataType: "ANY", varName: "out" + i });
+        }
+
+        funcVarClass.outputNum = outputNum;
+
+        drawFunc($('#variable').val(), funcVarClass);
+    });
+
+
+    // TODO : 목록 정보 가져오기
+    addKeywordTr($('#functionSelect-keyword-list'), '전체');
+    addKeywordTr($('#functionSelect-keyword-list'), 'AI');
+    addKeywordTr($('#functionSelect-keyword-list'), 'TIME');
+    addKeywordTr($('#functionSelect-keyword-list'), 'COUNT');
+    addKeywordTr($('#functionSelect-keyword-list'), 'SAMPLE');
+
+    // AI 모듈 리스트 가져오기 (파일 목록)
+    var aiPath;
+    switch (config.OS) {
+        case config.WINDOW:
+            aiPath = path.join(`c:\\Users\\${username}\\.aiplc`, 'ai');
+            break;
+        case config.LINUX:
+            aiPath = path.join(rootPath, 'ai');
+            break;
+    }
+    var aiList = uFile.getAiFileList(aiPath);
+
+    for (var i in aiList) {
+        addModTr($('#functionSelect-mod-list'), aiPrefix + aiList[i], false);
+    }
+
+    // 첫번째 목록 선택
+    $('#functionSelect-keyword-list').children('tr:first').trigger('click');
+
+    // 초기화
+    $('#funcBody').hide();
+
+    // 키보드 특수 키 설정
+    window.onkeydown = function (event) {
+        switch (event.key) {
+            case 'Escape':
+                window.close();
+                break;
+            case 'Enter':
+                $('#btnConfirm').trigger('click');
+                break;
+        }
+    };
+
+    // html 내부 블럭 선택 방지
+    $('body').bind("selectstart", function (e) {
+        return false;
+    });
+
+</script>
+
+</html>

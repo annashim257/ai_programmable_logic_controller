@@ -1,0 +1,915 @@
+<html>
+
+<head>
+    <link rel="stylesheet" href="../../../../resource/css/basic.css">
+    <link rel="stylesheet" href="../../../../resource/css/editor.css">
+
+    <style type='text/css'>
+        body,
+        input,
+        label,
+        td,
+        th {
+            /* font-family: 'SourceSansPro-Regular'; */
+            font-size: 0.95em;
+            background-color: #ffffff;
+        }
+    </style>
+
+    <!-- jquery 로딩 -->
+    <script>window.$ = window.jQuery = require('jquery');</script>
+</head>
+
+<body>
+
+    <div class="table-local-layout">
+
+        <div>
+            <button id="add"><img src="../../../../resource/image/index/editor/button_add.png"></img></button>
+            <button id="remove"><img src="../../../../resource/image/index/editor/button_remove.png"></img></button>
+        </div>
+
+        <div class="table-thead">
+            <table>
+                <colgroup>
+                    <col width="2%">
+                    <col width="10%">
+                    <col width="10%">
+                    <col width="10%">
+                    <col width="10%">
+                    <col width="10%">
+                    <col width="5%">
+                    <col />
+                </colgroup>
+                <thead>
+                    <tr class="fixed_top">
+                        <th>
+                            <table class="subjectTable">
+                                <colgroup>
+                                    <col width="2%">
+                                    <col width="10%">
+                                    <col width="10%">
+                                    <col width="10%">
+                                    <col width="10%">
+                                    <col width="10%">
+                                    <col width="5%">
+                                    <col />
+                                </colgroup>
+                                <thead>
+                                    <tr>
+                                        <th id="controlCheck"><input type="checkbox" class="check"></th>
+                                        <th>변수종류</th>
+                                        <th>변수</th>
+                                        <th>타입</th>
+                                        <th>메모리할당</th>
+                                        <th>초기값</th>
+                                        <th>리테인</th>
+                                        <th>설명</th>
+                                    </tr>
+                                </thead>
+                            </table>
+                        </th>
+                    </tr>
+                </thead>
+            </table>
+        </div>
+
+        <div class="table-body">
+            <table id="localVariableTable">
+                <colgroup>
+                    <col width="3%">
+                    <col width="10%">
+                    <col width="10%">
+                    <col width="10%">
+                    <col width="10%">
+                    <col width="10%">
+                    <col width="5%">
+                    <col />
+                </colgroup>
+                <tbody></tbody>
+            </table>
+        </div>
+
+    </div>
+
+    <!-- 문자열 검색 / 문자열 바꾸기 -->
+    <div class="searchBox">
+
+        <div class="searchBoxTitle">
+            <label>검색</label><a id="searchBoxClose" href="#"><img
+                    src="../../../../resource/image/close_over.png"></img></a>
+        </div>
+
+        <div class="searchBoxValue">
+            <div><label>검색 내용 :</label><input type="text" id="searchValue"></div>
+            <div><label>바꿀 내용 :</label><input type="text" id="changehValue"></div>
+        </div>
+
+        <div class="searchBoxButton">
+            <button id="searchButton">검색</button>
+            <button id="changeButton">바꾸기</button>
+            <button id="changeAllButton">모두 바꾸기</button>
+        </div>
+
+    </div>
+
+</body>
+
+<script type="text/javascript">
+
+    const path = require('path');
+    var fs = require('fs');
+    const { ipcRenderer, remote } = require('electron');
+    const { Menu } = remote;
+
+    const rootPath = path.join(__dirname, '/../../../../..');
+    const resourcePath = rootPath + '/src/resource';
+    const definePath = resourcePath + '/js/define';
+    const utilPath = resourcePath + '/js/util';
+    const rendererPath = resourcePath + '/js/renderer';
+
+
+    const req = require(definePath + '/req');
+    const action = require(definePath + '/action');
+    const uFile = require(utilPath + '/utilFile');
+    const config = require(definePath + '/config');
+
+    const { alertWindow } = require(utilPath + '/utilAlert');
+    const xmlManager = require(rendererPath + '/xmlManager');
+    const uconsole = require(utilPath + '/utilConsole');
+
+    var focusTarget;
+
+    var projPath;
+    var projName;
+    var plcName;
+    var progName;
+
+    /* 설정 */
+
+    // MenuItem 템플릿
+    const contextMenuItem = [
+        {
+            id: 'undo',
+            label: '실행 취소',
+            icon: resourcePath + '/image/index/menu/menu_undo.png',
+            enabled: true,
+            click() {
+                undoFunc(focusTarget);
+            }
+        },
+        {
+            id: 'redo',
+            label: '재 실행',
+            icon: resourcePath + '/image/index/menu/menu_redo.png',
+            enabled: true,
+            click() {
+                redoFunc(focusTarget);
+            }
+        },
+        { type: 'separator' },
+        {
+            id: 'cut',
+            label: '잘라내기',
+            icon: resourcePath + '/image/index/menu/menu_cut.png',
+            enabled: true,
+            click() {
+                if (focusTarget.tagName == 'SELECT' || focusTarget.tagName == 'BODY') {
+                    return false;
+                }
+                cutFunc(focusTarget);
+            }
+        },
+        {
+            id: 'copy',
+            label: '복사',
+            icon: resourcePath + '/image/index/menu/menu_copy.png',
+            enabled: true,
+            click() {
+                if (focusTarget.tagName == 'SELECT' || focusTarget.tagName == 'BODY') {
+                    return false;
+                }
+                copyFunc(focusTarget);
+            }
+        },
+        {
+            id: 'paste',
+            label: '붙여넣기',
+            icon: resourcePath + '/image/index/menu/menu_paste.png',
+            enabled: true,
+            click() {
+                if (focusTarget.tagName == 'SELECT' || focusTarget.tagName == 'BODY') {
+                    return false;
+                }
+                pasteFunc(focusTarget);
+            }
+        },
+        {
+            id: 'remove',
+            label: '삭제',
+            icon: resourcePath + '/image/index/menu/menu_remove.png',
+            enabled: true,
+            click() {
+                if (focusTarget.tagName == 'SELECT' || focusTarget.tagName == 'BODY') {
+                    return false;
+                }
+                removeFunc(focusTarget);
+            }
+        },
+        { type: 'separator' },
+        {
+            id: 'addRow',
+            label: '행 추가',
+            icon: resourcePath + '/image/index/menu/menu_addLine.png',
+            enabled: true,
+            click() {
+                if (focusTarget.tagName == 'SELECT' || focusTarget.tagName == 'BODY') {
+                    return false;
+                }
+                index = $(focusTarget).parent().parent().index();
+                addRow(index);
+            }
+        },
+        {
+            id: 'removeRow',
+            label: '행 삭제',
+            icon: resourcePath + '/image/index/menu/menu_removeLine.png',
+            enabled: true,
+            click() {
+                if (focusTarget.tagName == 'SELECT' || focusTarget.tagName == 'BODY') {
+                    return false;
+                }
+                index = $(focusTarget).parent().parent().index();
+                removeRow(index);
+            }
+        },
+        { type: 'separator' },
+        {
+            id: 'findStr',
+            label: '문자열 찾기',
+            icon: resourcePath + '/image/index/menu/menu_findStr.png',
+            enabled: true,
+            click() {
+                findStrFunc();
+            }
+        },
+        {
+            id: 'changeStr',
+            label: '문자열 바꾸기',
+            enabled: false,
+            icon: resourcePath + '/image/index/menu/menu_replaceStr.png',
+            click() {
+                changeStrFunc();
+            }
+        }
+    ];
+
+    // contextMenu 메뉴 이벤트 설정
+    var setContextMenuEvent = function (tr) {
+
+        if (typeof tr === 'undefined') {
+            uconsole.error('tr 파라미터 값이 정의 되지 않앗습니다.');
+            return;
+        }
+
+        $(tr).contextmenu(function (e) {
+
+            focusTarget = e.target;
+
+            var contextMenu;
+
+            if (focusTarget.tagName == 'SELECT' || focusTarget.tagName == 'BODY') {
+                contextMenu = Menu.buildFromTemplate(contextMenuItem);
+                contextMenu.getMenuItemById('cut').enabled = false;
+                contextMenu.getMenuItemById('copy').enabled = false;
+                contextMenu.getMenuItemById('paste').enabled = false;
+                contextMenu.getMenuItemById('remove').enabled = false;
+            } else {
+                contextMenu = Menu.buildFromTemplate(contextMenuItem);
+            }
+
+            contextMenu.popup();
+
+            return false;
+        });
+
+    };
+
+
+    // 제어 체크 박스를 체크 안됨으로 변환
+    var uncheckedToControlCheck = function () {
+        $('#controlCheck').children('.check').prop("checked", false);
+    }
+
+    // 체크 박스 모두 변경
+    var changeCheckbox = function (isChecked) {
+        $('#localVariableTable > tbody tr').each(function () {
+            $(this).children('td').children('.check').prop("checked", isChecked);
+        });
+    };
+
+    // 셀렉트 박스 생성
+    var createSelect = function (opt) {
+        if (typeof opt === 'undefined') {
+            uconsole.error('opt 값이 존재 하지 않습니다.');
+            return;
+        }
+
+        var html = '';
+        html += '<select>';
+        for (var i = 0; i < opt.classifies.length; i++) {
+            html += '<insert>';
+            if (typeof opt.val !== 'undefined' && opt.val === opt.classifies[i]) {
+                html += `<option value="${opt.classifies[i]}" selected>${opt.classifies[i]}</option>`;
+            } else {
+                html += `<option value="${opt.classifies[i]}">${opt.classifies[i]}</option>`;
+            }
+        }
+        html += '</select>';
+
+        opt.selector.html(html);
+    };
+
+    // 변수 종류 셀렉트 박스 생성
+    var createKeyword = function (tr, keyword) {
+
+        if (typeof tr === 'undefined') {
+            uconsole.error('tr 값이 존재 하지 않습니다.');
+            return;
+        }
+
+        createSelect({
+            // selector: $('#localVariableTable tr:last > .keyword'),
+            selector: tr.children('.keyword'),
+            classifies: [
+                'VAR',
+                'VAR_CONSTANT',
+                'VAR_EXTERNAL',
+                'VAR_EXTERNAL_CONSTANT',
+            ],
+            val: keyword
+        });
+
+    }
+
+    // 타입 셀렉트 박스 생성
+    var createDataType = function (tr, dataType) {
+        if (typeof tr === 'undefined') {
+            uconsole.error('tr 값이 존재 하지 않습니다.');
+            return;
+        }
+
+        createSelect({
+            // selector: $('#localVariableTable tr:last > .dataType'),
+            selector: tr.children('.dataType'),
+            classifies: [
+                'BOOL',
+                'TYTE',
+                'WORD',
+                'LWORD',
+                'SINT',
+                'INT',
+                'DINT',
+                'LINT',
+                'USINT',
+                'UINT',
+                'UDINT',
+                'ULINT',
+                'REAL',
+                'LREAL',
+                'TIME',
+                'DATE',
+                'TIME_OF_DAY',
+                'DATE_AND_TIME',
+                'STRING',
+                'ARRAY',
+                'FB_INST',
+                'STRUCT'
+            ],
+            val: dataType
+        });
+    }
+
+    // 리테인 셀렉터 생성
+    var createRetain = function (tr, retain) {
+        if (typeof tr === 'undefined') {
+            uconsole.error('tr 값이 존재 하지 않습니다.');
+            return
+        }
+        createSelect({
+            selector: tr.children('.retain'),
+            classifies: [
+                '미적용',
+                '적용'
+            ],
+            val: retain
+        });
+    }
+
+
+    /* 팝업 */
+
+    // 실행 취소
+    var undoFunc = function (target) {
+        uconsole.log($(target).val());
+    }
+
+    // 재 실행 
+    var redoFunc = function (target) {
+        uconsole.log($(target).val());
+    }
+
+    // 잘라내기
+    var cutFunc = function (target) {
+        sessionStorage.setItem('copy', $(target).val());
+        $(target).val('');
+    }
+
+    // 복사하기
+    var copyFunc = function (target) {
+        sessionStorage.setItem('copy', $(target).val());
+    }
+
+    // 붙여넣기 
+    var pasteFunc = function (target) {
+        $(target).val($(target).val() + (sessionStorage.getItem('copy') == null ? '' : sessionStorage.getItem('copy')));
+    }
+
+    // 삭제 
+    var removeFunc = function (target) {
+        $(target).val('');
+    }
+
+    // 문자열 검색 팝업창
+    var findStrFunc = function () {
+        $('.searchBox').show();
+        $('#changehValue').parent().hide();
+        $('#changeButton').hide();
+        $('#changeAllButton').hide();
+        $('#searchValue').focus();
+        $('#searchValue').select();
+    }
+
+    // 문자열 바꾸기 팝업창
+    var changeStrFunc = function () {
+        $('.searchBox').show();
+        $('#changehValue').parent().show();
+        $('#changeButton').show();
+        $('#changeAllButton').show();
+        $('#searchValue').focus();
+        $('#searchValue').select();
+    }
+
+    // 문자열 검색 ( 메뉴 또는 툴바 또는 단추키) 열기 
+    ipcRenderer.on(req.findStr, function (event, message) {
+        findStrFunc();
+    });
+
+    // 문자열 바꾸기 ( 메뉴 또는 툴바 또는 단추키) 열기 
+    ipcRenderer.on(req.changeStr, function (event, message) {
+        changeStrFunc();
+    });
+
+    // 메뉴 및 툴바 의 편집 Event 수신
+    ipcRenderer.on(req.editAll, (event, actionName) => {
+
+        switch (actionName) {
+            case action.cut:
+                uconsole.log("cut");
+                break;
+            case action.copy:
+                uconsole.log("copy");
+                break;
+            case action.paste:
+                uconsole.log("paste");
+                break;
+            case action.remove:
+                uconsole.log("remove");
+                break;
+            case action.undo:
+                uconsole.log("undo");
+                break;
+            case action.redo:
+                uconsole.log("redo");
+                break;
+        }
+    });
+
+    // 로컬 변수 생성시 데이터 수신
+    ipcRenderer.on(req.editor, function (event, opt) {
+        projPath = opt.projPath;
+        projName = opt.projName;
+        plcName = opt.plcName;
+        progName = opt.progName;
+
+        var datas = xmlManager.readLocalVar({
+            projPath: projPath,
+            projName: projName,
+            plcName: plcName,
+            progName: progName
+        });
+
+        for (var i in datas) {
+            loadRow(datas[i]);
+        }
+
+    });
+
+    /* 테이블 */
+
+    var loadRow = function (opt) {
+        var row = '';
+        row += '<tr>';
+        row += '    <td><input type="checkbox" class="check"></td>';
+        row += '    <td class="keyword"></td>';
+        row += '    <td class="name"><input type="text"></td>';
+        row += '    <td class="dataType"></td>';
+        row += '    <td class="memory"><input type="text"></td>';
+        row += '    <td class="initVal"><input type="text"></td>';
+        row += '    <td class="retain"></td>';
+        row += '    <td class="description"><input type="text"></td>';
+        row += '</tr>';
+
+        $('#localVariableTable > tbody').append(row);
+
+        var tr;
+        tr = $('#localVariableTable > tbody tr:eq(' + (opt.rowNum) + ')');
+
+        if (typeof opt.keyword !== 'undefined') tr.find('.keyword select').val(opt.keyword);
+        if (typeof opt.name !== 'undefined') tr.find('.name input').val(opt.name);
+        if (typeof opt.memory !== 'undefined') tr.find('.memory input').val(opt.memory);
+        if (typeof opt.initVal !== 'undefined') tr.find('.initVal input').val(opt.initVal);
+        if (typeof opt.description !== 'undefined') tr.find('.description input').val(opt.description);
+
+        createKeyword(tr, opt.keyword);
+        createDataType(tr, opt.dataType);
+        createRetain(tr, opt.retain);
+
+        // input 데이터 저장
+        tr.find('input').on('keypress', function(e){
+            if(e.which == 13) {
+                checkInputTagForValue($(this));
+            }
+        });
+
+        // input 데이터 저장
+        tr.find('input').on('change', function () {
+            checkInputTagForValue($(this));
+        });
+
+        // select 데이터 저장
+        tr.find('select').on('change', function () {
+            xmlManager.writeLocalVarToSet({
+                projPath: projPath,
+                projName: projName,
+                plcName: plcName,
+                progName: progName,
+                rowNum: tr.index(),
+                keyword: tr.find('.keyword select').val(),
+                name: tr.find('.name input').val(),
+                dataType: tr.find('.dataType select').val(),
+                memory: tr.find('.memory input').val(),
+                initVal: tr.find('.initVal input').val(),
+                retain: tr.find('.retain select').val(),
+                description: tr.find('.description input').val()
+            });
+        });
+
+        // 
+        setContextMenuEvent(tr);
+
+        // 
+        uncheckedToControlCheck();
+
+    }
+
+
+    // 테이블 의 row 하위에 있는 input tag(node) 값 체크 (정상 데이터이면 XML 데이터 저장)
+    var checkInputTagForValue = function (node) {
+        if (typeof node === 'undefined') {
+            return;
+        }
+
+        var tr = node.parent().parent();
+
+        switch (node.parent().attr('class')) {
+            case "name":   // 같은 변수 이름 제한
+                var name = node.val().trim();
+
+                if (name.length === 0) {
+                    return;
+                }
+
+                var isExist = false;
+                tr.parent().find('tr').each(function () {
+                    if (tr.index() !== $(this).index() && $(this).find('td.name input').val().trim() === name) {
+                        isExist = true;
+                        return false;
+                    }
+                });
+
+                if (isExist) {
+                    // alertWindow('이미 존재 하는 변수 이름입니다.');
+                    console.log('이미 존재 하는 변수 이름입니다.');
+                    node.val('');
+                    return;
+                }
+
+                break;
+            case "memory": // 메모리 할당 데이터 오류 잡기
+                var dataType = tr.find('.dataType select').val();
+                var memory = node.val().trim();
+
+                if (memory.length === 0) {
+                    return;
+                }
+
+                if (memory.substring(0, 1) !== '%') {
+                    // alertWindow('잘못된 데이터 입니다. ');
+                    console.log('잘못된 데이터 입니다. ');
+                    node.val('');
+                    return;
+                }
+
+                var memoryType = memory.substring(1, 2);
+                var location = memory.substring(2).replace(/[XBWL]/g, '').replace(/\./g, '');
+
+                // 숫자 형태가 맞는지 체크 
+                if (!$.isNumeric(location)) {
+                    // alertWindow('잘못된 데이터 입니다. ');
+                    console.log('잘못된 데이터 입니다. ');
+                    node.val('');
+                    return;
+                }
+
+                switch (memoryType) {
+                    case "I":
+                        if (location.length > 0 && Number(location) > 7) { // 7 포트 이상 이면 오류 ( TODO: 현재 디자이스 기준)
+                            // alertWindow('존재 하지 않는 입력 포트입니다. ');
+                            console.log('존재 하지 않는 입력 포트입니다. ');
+                            node.val('');
+                            return;
+                        }
+                        break;
+                    case "Q":
+                        if (location.length > 0 && Number(location) > 7) { // 7 포트 이상 이면 오류  ( TODO: 현재 디자이스 기준)
+                            // alertWindow('존재 하지 않는 출력 포트입니다. ');
+                            console.log('존재 하지 않는 출력 포트입니다. ');
+                            node.val('');
+                            return;
+                        }
+                        break;
+                    case "M":
+                        break;
+                    default:
+                        // alertWindow('잘못된 데이터 입니다. ');
+                        console.log('잘못된 데이터 입니다. ');
+                        node.val('');
+                        return;
+                }
+                break;
+            case "initVal":
+                var dataType = tr.find('.dataType select').val();
+                var initVal = node.val().trim();
+
+                if (initVal.length === 0) {
+                    return;
+                }
+
+                switch (dataType) {
+                    case 'BOOL':
+                        if (!$.isNumeric(initVal)) {
+                            // alertWindow('잘못된 데이터 입니다. ');
+                            console.log('잘못된 데이터 입니다. ');
+                            node.val('');
+                            return;
+                        }
+
+                        if (Number(initVal) > 1) {
+                            // alertWindow('잘못된 데이터 입니다. ');
+                            console.log('잘못된 데이터 입니다. ');
+                            node.val('');
+                            return;
+                        }
+                        break;
+                }
+                break;
+        }
+
+        xmlManager.writeLocalVarToSet({
+            projPath: projPath,
+            projName: projName,
+            plcName: plcName,
+            progName: progName,
+            rowNum: tr.index(),
+            keyword: tr.find('.keyword select').val(),
+            name: tr.find('.name input').val(),
+            dataType: tr.find('.dataType select').val(),
+            memory: tr.find('.memory input').val(),
+            initVal: tr.find('.initVal input').val(),
+            retain: tr.find('.retain select').val(),
+            description: tr.find('.description input').val()
+        });
+    }
+
+    var isCheck = false;
+
+    // 열 추가
+    var addRow = function (index) {
+
+        var row = '';
+        row += '<tr>';
+        row += '    <td><input type="checkbox" class="check"></td>';
+        row += '    <td class="keyword"></td>';
+        row += '    <td class="name"><input type="text"></td>';
+        row += '    <td class="dataType"></td>';
+        row += '    <td class="memory"><input type="text"></td>';
+        row += '    <td class="initVal"><input type="text"></td>';
+        row += '    <td class="retain" disabled></td>';
+        row += '    <td class="description"><input type="text"></td>';
+        row += '</tr>';
+
+        var tr;
+        if (typeof opt === 'undefined') {
+            $('#localVariableTable > tbody:last-child').append(row);
+            tr = $('#localVariableTable > tbody tr:last');
+        } else {
+            $('#localVariableTable > tbody tr:eq(' + index + ')').after(row);
+            tr = $('#localVariableTable > tbody  tr:eq(' + (index + 1) + ')');
+        }
+
+        createKeyword(tr);
+        createDataType(tr);
+        createRetain(tr);
+
+        tr.find('input').on('keypress', function(e){
+            if(e.which == 13) {
+                checkInputTagForValue($(this));
+            }
+        });
+
+        tr.find('input').on('change', function (e) {
+            checkInputTagForValue($(this))
+        });
+
+        // select 데이터 저장
+        tr.find('select').on('change', function () {
+            xmlManager.writeLocalVarToSet({
+                projPath: projPath,
+                projName: projName,
+                plcName: plcName,
+                progName: progName,
+                rowNum: tr.index(),
+                keyword: tr.find('.keyword select').val(),
+                name: tr.find('.name input').val(),
+                dataType: tr.find('.dataType select').val(),
+                memory: tr.find('.memory input').val(),
+                initVal: tr.find('.initVal input').val(),
+                retain: tr.find('.retain select').val(),
+                description: tr.find('.description input').val()
+            });
+        });
+
+        // 
+        setContextMenuEvent(tr);
+
+        // 
+        uncheckedToControlCheck();
+
+        // XML 열 추가
+        xmlManager.writeLocalVar({
+            projPath: projPath,
+            projName: projName,
+            plcName: plcName,
+            progName: progName
+        });
+    };
+
+    // 열 삭제
+    var removeRow = function (index) {
+
+        var indexs = [];
+
+        if (typeof index === 'undefined') {
+
+            $('#localVariableTable > tbody tr').each(function () {
+                if ($(this).children('td:eq(0)').children('.check').is(":checked")) {
+                    indexs.push($(this).index());
+                    $(this).remove();
+                }
+            });
+
+        } else {
+            $('#localVariableTable > tbody tr:eq(' + index + ')').remove();
+            indexs.push(index);
+        }
+
+        uncheckedToControlCheck();
+
+        if (indexs.length > 0) {
+            // XML 열 삭제
+            xmlManager.writeLocalVarToRemove({
+                projPath: projPath,
+                projName: projName,
+                plcName: plcName,
+                progName: progName,
+                rowNums: indexs
+            });
+        }
+
+    };
+
+    // 열 추가 
+    $('#add').on('click', function () {
+        addRow();
+    })
+
+    // 열 삭제 
+    $('#remove').on('click', function () {
+        removeRow();
+    });
+
+    // 체크 박스 모두 체크 / 해제 
+    $('#controlCheck').on('click', function () {
+        if ($(this).children('.check').is(":checked")) {
+            changeCheckbox(true);
+        } else {
+            changeCheckbox(false);
+        }
+    });
+
+
+    /* 검색 */
+
+    // 검색
+    var search = function (value) {
+        $("#localVariableTable :contains('" + value + "')").children('input').focus();
+    }
+
+    // 검색 입력 박스 Enter 키 동작
+    $('.searchBox > input').on('keydown', function (key) {
+        if (key.keyCode == 13) {
+            search($('searchValue').val());
+        }
+    })
+
+    // 검색 박스 닫기
+    $('#searchBoxClose').on('click', function () {
+        $('.searchBox').hide();
+    });
+
+    // 검색 시작 
+    $('.searchBox > input').on('keydown', function (key) {
+        if (key.keyCode == 13) {
+            search($('searchValue').val());
+        }
+    })
+
+    // 검색 박스 닫기
+    $('#searchBoxClose').on('click', function () {
+        $('.searchBox').hide();
+    });
+
+    // 검색 입력 박스 Enter 키 동작
+    $('.searchBox > input').on('keydown', function (key) {
+        if (key.keyCode == 13) {
+            search($('searchValue').val());
+        }
+    })
+
+    // 검색 박스 닫기
+    $('#searchBoxClose').on('click', function () {
+        $('.searchBox').hide();
+    });
+
+    // 검색 박스 닫기 - ESC 키 사용
+    window.onkeydown = function (event) {
+        if (event.key == 'Escape') {
+            $('.searchBox').hide();
+        }
+    }
+
+    // 검색 하기
+    $('#searchButton').on('click', function () {
+        search($('#searchValue').val());
+    });
+
+    // 브라우져 기본 기능 막기 - 잘라내기, 복사, 붙여넣기
+    // $(document).bind('cut copy paste ', function (e) {
+    //     e.preventDefault();
+    // });
+
+    // 브라우져 기본 기능 막기 - 잘라내기 
+    $(document).bind('cut', function (e) {
+        e.preventDefault();
+    });
+
+    // html 내부 블럭 선택 방지
+    $('body').bind("selectstart", function (e) {
+        return false;
+    });
+
+
+</script>
+
+</html>

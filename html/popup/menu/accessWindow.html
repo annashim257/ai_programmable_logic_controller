@@ -1,0 +1,163 @@
+<html>
+
+<head>
+    <script>window.$ = window.jQuery = require('jquery');</script>
+
+    <link rel="stylesheet" href="../../../resource/css/basic.css">
+    <link rel="stylesheet" href="../../../resource/css/popup/layout.css">
+
+</head>
+
+<body>
+    <div class="window-layout">
+        <div class="access-layout">
+            <div class="label">접속 장치 선택</div>
+            <table>
+                <colgroup>
+                    <col width="25%">
+                    <col width="50%">
+                    <col />
+                </colgroup>
+                <tbody>
+                    <tr>
+                        <td><span> 주소 :</span></td>
+                        <td colspan="2"><input type="text" id="plcIp" placeholder="10.10.10.250"
+                                onblur="this.placeholder='10.10.10.250'" onfocus="this.placeholder=''"></td>
+                    </tr>
+                    <tr>
+                        <td><span> 포트 :</span></td>
+                        <td colspan="2"><input type="text" id="plcPort" placeholder="10001"
+                                onblur="this.placeholder='10001'" onfocus="this.placeholder=''"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="separate"></div>
+
+        <div class="ai-layout">
+            <div class="label">AI 서버 설정</div>
+            <table>
+                <colgroup>
+                    <col width="25%">
+                    <col width="50%">
+                    <col />
+                </colgroup>
+                <tbody>
+                    <tr>
+                        <td><span> 주소 :</span></td>
+                        <td>
+                            <input type="text" id="aiIp" placeholder="IP 주소 또는 도메인 주소를 입력 하세요."
+                                onblur="this.placeholder='IP 주소 또는 도메인 주소를 입력 하세요.'" onfocus="this.placeholder=''">
+                        </td>
+                        <td>
+                            <select id="domainType">
+                                <option value="domain">도메인 방식</option>
+                                <!-- <option value="ip">IP 주소방식</option> -->
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><span> 포트 :</span></td>
+                        <td>
+                            <!-- <input type="text" id="aiPort" placeholder="80" onblur="this.placeholder='80'" onfocus="this.placeholder=''"> -->
+                            <input type="text" id="aiPort" disabled>
+                        </td>
+                        <td></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="button-layout">
+            <button id="btnConfirm">확인</button>
+            <button id="cancel">취소</button>
+        </div>
+    </div>
+</body>
+
+<script type="text/javascript">
+
+    const rootPath = __dirname + '/../../../..';
+    const resourcePath = rootPath + '/src/resource';
+    const definePath = resourcePath + '/js/define';
+    const rendererPath = resourcePath + '/js/renderer';
+    const utilPath = resourcePath + '/js/util';
+
+    const { ipcRenderer } = require('electron');
+    const req = require(definePath + '/req');
+
+    const { alertWindow } = require(utilPath + '/utilAlert');
+
+    const uFile = require(utilPath + '/utilFile');
+    const uconsole = require(utilPath + '/utilConsole');
+    const xmlManager = require(rendererPath + '/xmlManager');
+
+    const config = require(definePath + '/config');
+    const path = require('path');
+
+    var projPath;
+    var projName;
+
+    // 접속 설정 가져오기 수신
+    ipcRenderer.on(req.accessToAcessWindow, function (event, _projPath, _projName) {
+
+        projPath = _projPath;
+        projName = _projName;
+
+        var data = xmlManager.readAccess(projPath, projName);
+        $('#plcIp').val(data.plcIp);
+        $('#plcPort').val(data.plcPort);
+        $('#aiIp').val(data.aiIp);
+        $('#aiPort').val(data.aiPort);
+
+    });
+
+    // 서버 설정 변경에 따라 포트 입력 활성화 여부 선택
+    $('#domainType').on('change', function () {
+        switch ($(this).val()) {
+            case "domain":
+                $('#aiPort').attr('disabled', true).val(' ');
+                break;
+            case "ip":
+                $('#aiPort').attr('disabled', false).val('');
+                break;
+        }
+    });
+
+    // 확인 
+    $('#btnConfirm').on('click', function () {
+
+        if (typeof projName !== 'undefined') {
+             ipcRenderer.send(req.setAccess, {
+                plcIp:$('#plcIp').val(), 
+                plcPort:$('#plcPort').val(), 
+                aiIp:$('#aiIp').val(), 
+                aiPort:$('#aiPort').val()
+             });
+        } else {
+            alertWindow('프로젝트를 생성 하세요.');
+        }
+
+        window.close();
+    });
+
+    // 취소 - 창 닫기
+    $('#cancel').on('click', function () {
+        window.close();
+    });
+
+    // if ($('#domainType').val() === 'domain') {
+    //     $('#aiPort').attr('disabled', true).val(' ');
+    // } else {
+    //     $('#aiPort').attr('disabled', false).val('');
+    // }
+
+    // html 내부 블럭 선택 방지
+    $('body').bind("selectstart", function (e) {
+        return false;
+    });
+
+</script>
+
+</html>

@@ -1,0 +1,333 @@
+<html>
+
+<head>
+    <script>window.$ = window.jQuery = require('jquery');</script>
+
+    <link rel="stylesheet" href="../../../resource/css/basic.css">
+    <link rel="stylesheet" href="../../../resource/css/popup/layout.css">
+
+</head>
+
+<body>
+    <div class="window-layout">
+        <div class="variable-layout">
+            <div class="label">변수</div>
+            <table>
+                <colgroup>
+                    <col width="25%">
+                    <col />
+                </colgroup>
+                <tbody>
+                    <tr>
+                        <td><span>이름 :</span></td>
+                        <td><input type="text" id="varName"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="separate"></div>
+
+        <div class="variable-type-layout">
+            <div class="label">변수 종류</div>
+            <table>
+                <colgroup>
+                    <col width="50%" />
+                    <col />
+                </colgroup>
+                <tbody>
+                    <tr>
+                        <td>
+                            <input type="radio" id="localVar" name="varType"><label for="localVar">로컬 변수</label>
+                        </td>
+                        <td>
+                            <input type="radio" id="globalVar" name="varType"><label for="globalVar">글로벌 변수</label>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="separate"></div>
+
+        <div class="variable-list-layout">
+            <div class="label">변수 목록</div>
+
+            <div class="variable-list-box">
+                <table id="variable-table">
+                    <colgroup>
+                        <col width="200px" />
+                        <col width="120px" />
+                        <col width="60px" />
+                        <col width="25%" />
+                        <col />
+                    </colgroup>
+                    <thead>
+                        <th>변수 종류</th>
+                        <th>변수 명</th>
+                        <th>타 입</th>
+                        <th>메모리 할당</th>
+                        <th>초기값</th>
+                    </thead>
+                    <tbody id="variable-list">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="button-layout">
+            <button id="btnConfirm">확인</button>
+            <button id="cancel">취소</button>
+        </div>
+    </div>
+</body>
+
+<script type="text/javascript">
+
+    const rootPath = __dirname + '/../../../..';
+    const resourcePath = rootPath + '/src/resource';
+    const rendererPath = resourcePath + '/js/renderer';
+    const utilPath = resourcePath + '/js/util';
+    const definePath = resourcePath + '/js/define';
+
+    const req = require(definePath + '/req');
+    const xmlManager = require(rendererPath + '/xmlManager');
+    const { alertWindow } = require(utilPath + '/utilAlert');
+    const { ipcRenderer } = require('electron');
+    const uconsole = require(utilPath + '/utilConsole');
+
+    var projPath;
+    var projName;
+    var plcName;
+    var progName;
+    var currentDataType;    // 선택된 심볼의 데이터 타입
+    var eventStatus;        // enter key 여부 확인
+
+    // 선택한 열 배경색 변경 하기
+    var selectTr = function (index) {
+
+        $('#variable-table tbody tr td').css({
+            'background': '#424242'
+        });
+
+        $('#variable-table tbody tr td input').css({
+            'background': '#424242'
+        });
+
+        $('#variable-table tbody tr:eq(' + index + ') td').css({
+            'background': '#3399ff'
+        });
+
+    }
+
+    // 열 추가
+    var addTr = function (tbody, keyword, name, dataType, memory, initVal) {
+        var length = tbody.children('tr').length;
+        var html = '';
+        html += '<tr>';
+        html += '<td class="keyword">' + keyword + '</td>';
+        html += '<td class="name">' + name + '</td>';
+        html += '<td class="dataType">' + dataType + '</td>';
+        html += '<td class="memory">' + memory + '</td>';
+        html += '<td class="initVal">' + initVal + '</td>';
+        html += '</tr>';
+
+        tbody.append(html);
+
+        $('#variable-table tbody tr:last').on('click', function () {
+
+            var tr = $(this);
+
+            tr.parent().children('tr').each(function () {
+                $(this).children('td').css({
+                    'background-color': '#424242'
+                });
+                $(this).removeClass('selected');;
+            });
+
+            if (!tr.hasClass('selected')) {
+                // tr.children('td').css({
+                //     'background-color': '#3399ff'
+                // });
+                tr.addClass('selected');
+            } else {
+                // tr.children('td').css({
+                //     'background-color': '#424242'
+                // });
+                tr.removeClass('selected');
+            }
+
+            var varName = tr.children('.name').text();
+            $('#varName').val(varName);
+
+            selectTr($(this).index());
+        });
+    };
+
+    var removeAllTr = function (tbody) {
+        tbody.children('tr').remove();
+    }
+
+    // esc 키 - 창 닫기
+    window.onkeydown = function (event) {
+        if (event.key == 'Escape') {
+            window.close();
+        }
+    }
+
+    // 로컬 변수 데이터 가져오기
+    var getDatasForLocal = function (opt) {
+        var datas = xmlManager.readLocalVar({
+            projPath: opt.projPath,
+            projName: opt.projName,
+            plcName: opt.plcName,
+            progName: opt.progName
+        });
+
+        return datas;
+    }
+
+    // 글로벌 변수 데이터 가져오기
+    var getDatasForGlobal = function (opt) {
+        var datas = xmlManager.readGlobalVar({
+            projPath: opt.projPath,
+            projName: opt.projName,
+            plcName: opt.plcName,
+            progName: opt.progName
+        });
+
+        return datas;
+    }
+
+    // 로컬 변수 이름 받기
+    ipcRenderer.on(req.variableReturn, function (event, opt) {
+
+        projPath = opt.projPath;
+        projName = opt.projName;
+        plcName = opt.plcName;
+        progName = opt.progName;
+        eventStatus = opt.eventStatus;
+        currentDataType = opt.currentDataType;
+
+        // 변수 이름 설정
+        $('#varName').val(opt.name);
+        var datas;
+
+        uconsole.log(opt.className);
+
+        if (opt.varType.length === 0 || typeof opt.varType === 'localVar') {
+            $('#localVar').prop('checked', true);
+            datas = getDatasForLocal(opt);
+        } else {
+            $('#globalVar').prop('checked', true);
+            datas = getDatasForGlobal(opt);
+        }
+
+        if (datas.length > 0) {
+            for (var i in datas) {
+                addTr($('#variable-list'), datas[i].keyword, datas[i].name, datas[i].dataType, datas[i].memory, datas[i].initVal);
+            }
+        }
+
+        // 변수 목록 블럭
+        $('#variable-list tr').each(function () {
+            if ($(this).find('td:eq(1)').text().trim() == opt.name) {
+                $(this).addClass('selected');
+                $(this).css({
+                    'background-color': '#3399ff'
+                });
+                return false;
+            }
+        })
+    });
+
+    $('input[name="varType"]').on('change', function () {
+        var id = $(this).attr('id');
+        var datas;
+
+        switch ($(this).attr('id')) {
+            case 'localVar':
+                datas = getDatasForLocal({
+                    projPath: projPath,
+                    projName: projName,
+                    plcName: plcName,
+                    progName: progName
+                });
+                break;
+            case 'globalVar':
+                datas = getDatasForGlobal({
+                    projPath: projPath,
+                    projName: projName,
+                    plcName: plcName,
+                    progName: progName
+                });
+                break;
+        }
+
+        removeAllTr($('#variable-list'));
+
+        if (datas.length > 0) {
+            for (var i in datas) {
+                addTr($('#variable-list'), datas[i].keyword, datas[i].name, datas[i].dataType, datas[i].memory, datas[i].initVal);
+            }
+        }
+    });
+
+    // 확인 
+    $('#btnConfirm').on('click', function () {
+        var name = $('#varName').val();
+
+        if (name.trim().length == 0) {
+            alertWindow("로컬 변수 이름을 선택하세요.");
+            return;
+        }
+
+        if (typeof currentDataType !== 'undefined') {
+            if ( currentDataType.trim().length > 0 && currentDataType !== tr.find('.dataType').text() ){
+                alertWindow("사용 할 수 없는 데이터 타입 입니다.");
+                return;
+            }
+        }
+
+        var tr = $('#variable-table tbody').find('.selected');
+
+        var localVarClass = {
+            varType: $('input[name="varType"]:checked').attr('id'),
+            keyword: tr.find('.keyword').text(),
+            name: name,
+            dataType: tr.find('.dataType').text(),
+            memory: tr.find('.memory').text(),
+            initVal: tr.find('.initVal').text(),
+            eventStatus: eventStatus
+        }
+
+        ipcRenderer.send(req.variableSelect, localVarClass);
+
+        window.close();
+    });
+
+    // 취소 - 창 닫기
+    $('#cancel').on('click', function () {
+        window.close();
+    });
+
+    // 키보드 특수 키 설정
+    window.onkeydown = function (event) {
+        switch (event.key) {
+            case 'Escape':
+                window.close();
+                break;
+            case 'Enter':
+                $('#btnConfirm').trigger('click');
+                break;
+        }
+    };
+
+    // html 내부 블럭 선택 방지
+    $('body').bind("selectstart", function (e) {
+        return false;
+    });
+
+</script>
+
+</html>
